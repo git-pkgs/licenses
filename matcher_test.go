@@ -44,6 +44,9 @@ func TestMatcherWholeTextHash(t *testing.T) {
 	if match.Score != 85 || match.Coverage != 100 {
 		t.Fatalf("score and coverage = %v, %v", match.Score, match.Coverage)
 	}
+	if match.Kind != KindText {
+		t.Fatalf("kind = %q, want %q", match.Kind, KindText)
+	}
 	if !slices.Equal(match.LicenseIDs, []string{"AGPL-3.0", "MIT"}) {
 		t.Fatalf("license IDs = %#v", match.LicenseIDs)
 	}
@@ -88,6 +91,52 @@ func TestMatcherAhoExactMatchesAndClues(t *testing.T) {
 	}
 	if len(result.Clues) != 1 || result.Clues[0].RuleID != "a-clue.RULE" {
 		t.Fatalf("clues = %#v", result.Clues)
+	}
+	if result.Clues[0].Kind != KindClue {
+		t.Fatalf("clue kind = %q, want %q", result.Clues[0].Kind, KindClue)
+	}
+}
+
+func TestRuleKind(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		flags uint16
+		want  Kind
+	}{
+		{flags: corpus.FlagLicenseText, want: KindText},
+		{flags: corpus.FlagLicenseNotice, want: KindNotice},
+		{flags: corpus.FlagLicenseTag, want: KindTag},
+		{flags: corpus.FlagLicenseReference, want: KindReference},
+		{flags: corpus.FlagLicenseIntro, want: KindIntro},
+		{flags: corpus.FlagLicenseClue, want: KindClue},
+		{
+			flags: corpus.FlagLicenseText | corpus.FlagLicenseNotice,
+			want:  KindUnknown,
+		},
+		{want: KindUnknown},
+	}
+	for _, test := range tests {
+		if got := ruleKind(test.flags); got != test.want {
+			t.Errorf("ruleKind(%d) = %q, want %q", test.flags, got, test.want)
+		}
+	}
+}
+
+func TestEmbeddedCorpusHasNoMatchableUnknownRuleKinds(t *testing.T) {
+	matcher, err := New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var unknown []string
+	for _, rule := range matcher.engine.rules {
+		if rule.Flags&corpus.FlagFalsePositive == 0 &&
+			ruleKind(rule.Flags) == KindUnknown {
+			unknown = append(unknown, rule.ID)
+		}
+	}
+	if len(unknown) != 0 {
+		t.Fatalf("matchable rules with unknown kinds: %v", unknown)
 	}
 }
 

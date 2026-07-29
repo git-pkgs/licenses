@@ -24,6 +24,26 @@ const (
 	Exact Method = "exact"
 )
 
+// Kind identifies the ScanCode category of a matched rule.
+type Kind string
+
+const (
+	// KindUnknown identifies a rule without an is_license_* category.
+	KindUnknown Kind = "unknown"
+	// KindText identifies a full license text rule.
+	KindText Kind = "text"
+	// KindNotice identifies a license notice rule.
+	KindNotice Kind = "notice"
+	// KindTag identifies a license tag rule.
+	KindTag Kind = "tag"
+	// KindReference identifies a license reference rule.
+	KindReference Kind = "reference"
+	// KindIntro identifies a license introduction rule.
+	KindIntro Kind = "intro"
+	// KindClue identifies a weak license clue rule.
+	KindClue Kind = "clue"
+)
+
 // ErrTooManyMatches is returned when an input produces more exact-match
 // candidates than the matcher can safely filter.
 var ErrTooManyMatches = errors.New("licenses: too many exact-match candidates")
@@ -47,6 +67,8 @@ type Match struct {
 	RuleID string
 	// LicenseIDs contains identifiers copied from the rule expression.
 	LicenseIDs []string
+	// Kind identifies the ScanCode category of the matched rule.
+	Kind Kind
 	// Method identifies the exact matching stage that produced the match.
 	Method Method
 	// Score is the rule's 0-100 relevance, not a similarity score.
@@ -317,6 +339,7 @@ func (m *Matcher) makeMatch(input []byte, rule corpus.Rule, method Method, start
 	match := Match{
 		RuleID:     rule.ID,
 		LicenseIDs: expressionIDs(rule.Expression),
+		Kind:       ruleKind(rule.Flags),
 		Method:     method,
 		Score:      float64(rule.Relevance),
 		Coverage:   fullScore,
@@ -327,6 +350,32 @@ func (m *Matcher) makeMatch(input []byte, rule corpus.Rule, method Method, start
 		match.Matched = slices.Clone(input[start:end])
 	}
 	return match
+}
+
+func ruleKind(flags uint16) Kind {
+	const mask = corpus.FlagLicenseText |
+		corpus.FlagLicenseNotice |
+		corpus.FlagLicenseTag |
+		corpus.FlagLicenseReference |
+		corpus.FlagLicenseIntro |
+		corpus.FlagLicenseClue
+
+	switch flags & mask {
+	case corpus.FlagLicenseText:
+		return KindText
+	case corpus.FlagLicenseNotice:
+		return KindNotice
+	case corpus.FlagLicenseTag:
+		return KindTag
+	case corpus.FlagLicenseReference:
+		return KindReference
+	case corpus.FlagLicenseIntro:
+		return KindIntro
+	case corpus.FlagLicenseClue:
+		return KindClue
+	default:
+		return KindUnknown
+	}
 }
 
 func addMatch(result *Result, rule corpus.Rule, match Match) {

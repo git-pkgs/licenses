@@ -5,13 +5,61 @@ Go library for matching license text against ScanCode's license rule corpus.
 The corpus is embedded in the package. Matching needs no network access, cgo,
 or Python.
 
-## Installation
+## Install
+
+Install the repository scanner:
+
+```bash
+go install github.com/git-pkgs/licenses/cmd/licenses@latest
+```
+
+Add the matching library to a Go module:
 
 ```bash
 go get github.com/git-pkgs/licenses
 ```
 
-## Usage
+## Scan a repository
+
+```bash
+licenses .
+licenses /path/to/repository
+licenses -json /path/to/repository > licenses.json
+licenses -scope all -max-files 0 /path/to/repository
+```
+
+The command reports detections by file with the matching rule, expression,
+rule kind, score, coverage, and byte range. JSON is used when output is
+redirected; terminals get a text report. Skipped files and directories are
+named with the reason they were skipped.
+
+Reference rules that join text across document blocks are reported as clues
+outside files such as `LICENSE`, `COPYING`, and `NOTICE`. Soft-wrapped lines,
+including lines with a shared source-comment prefix, remain detections.
+Demoted matches stay visible in the file report but do not contribute to the
+repository expression totals.
+
+The default `project` scope skips hidden, dependency, build, cache, and
+test-data directories. Use `-scope all` for dependency-license scans. An
+explicit `-skip` list applies in either scope. Both scopes exclude `.git`.
+
+Regular text files are limited to 1 MiB and 32 directory levels. Project scope
+also has a 10,000-file default limit. All scope requires an explicit
+`-max-files` value; use `-max-files 0` for an unlimited dependency scan.
+Setting any limit to zero removes that guard.
+
+The scanner accepts UTF-8, UTF-16LE or UTF-16BE with a byte-order mark, and
+Latin-1. Reported byte ranges refer to the original file. JSON reports use
+schema version 1. Schema 1 is additive: consumers must ignore unknown fields
+and accept file records with empty `detections` when `clues` are present. With
+`-matched-text`, `matched` contains decoded UTF-8 rather than the original
+encoded bytes.
+
+Exit status 0 means detections were found, 1 is a fatal command error, 2 means
+the scan was incomplete because of per-file errors or the file limit, and 3
+means no conclusive detections were found.
+
+## Use the library
 
 ```go
 matcher, err := licenses.New()
@@ -71,6 +119,27 @@ GOMAXPROCS=1 go test \
   -benchtime 1s \
   -count 5 \
   .
+```
+
+Run the repository scan benchmark with:
+
+```bash
+go test ./cmd/licenses \
+  -run '^$' \
+  -bench '^BenchmarkScanRepository$' \
+  -benchmem \
+  -count 5
+```
+
+To benchmark local checkouts with the same scan defaults:
+
+```bash
+LICENSES_BENCH_REPOS=/path/to/repo1:/path/to/repo2 \
+  go test ./cmd/licenses \
+  -run '^$' \
+  -bench '^BenchmarkScanRepositories$' \
+  -benchmem \
+  -count 5
 ```
 
 Use the standard `go test` flags to select benchmarks or change their duration
