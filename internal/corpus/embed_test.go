@@ -19,11 +19,13 @@ func TestEmbeddedCorpus(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if index.Info.Version != "33.0.0rc1" {
-		t.Fatalf("version = %q", index.Info.Version)
+	wantVersion := corpusVersionValue(t, "version")
+	if index.Info.Version != wantVersion {
+		t.Fatalf("version = %q, want %q", index.Info.Version, wantVersion)
 	}
-	if index.Info.SourceCommit != "6ba59089789600479cda46c84c6d436774179092" {
-		t.Fatalf("source commit = %q", index.Info.SourceCommit)
+	wantCommit := corpusVersionValue(t, "commit")
+	if index.Info.SourceCommit != wantCommit {
+		t.Fatalf("source commit = %q, want %q", index.Info.SourceCommit, wantCommit)
 	}
 	if index.Info.RuleCount != 39_215 {
 		t.Fatalf("rule count = %d, want 39215", index.Info.RuleCount)
@@ -57,6 +59,34 @@ func TestEmbeddedCorpus(t *testing.T) {
 		noOutputLinks,
 		noTerminals,
 	)
+}
+
+func TestNoticeNamesPinnedCorpusCommit(t *testing.T) {
+	notice, err := os.ReadFile("../../NOTICE")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "Pinned source commit: " + corpusVersionValue(t, "commit")
+	if !strings.Contains(string(notice), want) {
+		t.Fatalf("NOTICE does not contain %q", want)
+	}
+}
+
+func corpusVersionValue(t *testing.T, key string) string {
+	t.Helper()
+
+	data, err := os.ReadFile("../../CORPUS_VERSION")
+	if err != nil {
+		t.Fatal(err)
+	}
+	prefix := key + "="
+	for line := range strings.SplitSeq(string(data), "\n") {
+		if value, found := strings.CutPrefix(strings.TrimSpace(line), prefix); found {
+			return value
+		}
+	}
+	t.Fatalf("CORPUS_VERSION has no %s", key)
+	return ""
 }
 
 func TestEmbeddedCorpusSize(t *testing.T) {

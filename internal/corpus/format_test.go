@@ -27,23 +27,18 @@ func TestRoundTrip(t *testing.T) {
 		Vocabulary: []string{"apache", "license", "permission", "zlib"},
 		Rules: []Rule{
 			{
-				ID:              "a.LICENSE",
-				Expression:      "apache-2.0",
-				Tokens:          []uint32{1, 2},
-				Flags:           FlagLicenseText,
-				Relevance:       100,
-				MinimumCoverage: 100,
+				ID:         "a.LICENSE",
+				Expression: "apache-2.0",
+				Tokens:     []uint32{1, 2},
+				Flags:      FlagLicenseText,
+				Relevance:  100,
 			},
 			{
-				ID:                  "z.RULE",
-				Expression:          "zlib",
-				Tokens:              []uint32{3, 4},
-				Language:            "en",
-				ReferencedFilenames: []string{"LICENSE", "COPYING"},
-				RequiredPhrases:     []string{"permission is granted"},
-				Flags:               FlagLicenseNotice | FlagContinuous,
-				Relevance:           90,
-				MinimumCoverage:     80,
+				ID:         "z.RULE",
+				Expression: "zlib",
+				Tokens:     []uint32{3, 4},
+				Flags:      FlagLicenseNotice | FlagContinuous,
+				Relevance:  90,
 			},
 		},
 		Automaton: automaton,
@@ -72,7 +67,7 @@ func TestRoundTrip(t *testing.T) {
 		t.Fatalf("rules not sorted: %q, %q", got.Rules[0].ID, got.Rules[1].ID)
 	}
 	z := got.Rules[1]
-	if z.Expression != "zlib" || z.Language != "en" || z.Relevance != 90 || z.MinimumCoverage != 80 {
+	if z.Expression != "zlib" || z.Relevance != 90 {
 		t.Fatalf("decoded rule differs: %#v", z)
 	}
 	if !slices.Equal(z.Tokens, []uint32{3, 4}) {
@@ -83,6 +78,32 @@ func TestRoundTrip(t *testing.T) {
 	}
 	if err := got.Automaton.Validate(2); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestRuleFlagValues(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		got  uint16
+		want uint16
+	}{
+		{name: "license text", got: FlagLicenseText, want: 2},
+		{name: "license notice", got: FlagLicenseNotice, want: 4},
+		{name: "license tag", got: FlagLicenseTag, want: 8},
+		{name: "license reference", got: FlagLicenseReference, want: 16},
+		{name: "license intro", got: FlagLicenseIntro, want: 32},
+		{name: "license clue", got: FlagLicenseClue, want: 64},
+		{name: "false positive", got: FlagFalsePositive, want: 128},
+		{name: "required phrase", got: FlagRequiredPhrase, want: 256},
+		{name: "continuous", got: FlagContinuous, want: 512},
+		{name: "deprecated", got: FlagDeprecated, want: 1024},
+	}
+	for _, test := range tests {
+		if test.got != test.want {
+			t.Errorf("%s flag = %d, want %d", test.name, test.got, test.want)
+		}
 	}
 }
 

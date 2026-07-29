@@ -12,20 +12,20 @@ import (
 	"github.com/git-pkgs/licenses/internal/aho"
 )
 
-const (
-	// FormatVersion is the on-disk corpus index format.
-	FormatVersion = 2
+// FormatVersion is the on-disk corpus index format.
+const FormatVersion = 3
 
-	FlagLicenseText uint16 = 1 << iota
-	FlagLicenseNotice
-	FlagLicenseTag
-	FlagLicenseReference
-	FlagLicenseIntro
-	FlagLicenseClue
-	FlagFalsePositive
-	FlagRequiredPhrase
-	FlagContinuous
-	FlagDeprecated
+const (
+	FlagLicenseText      uint16 = 1 << 1
+	FlagLicenseNotice    uint16 = 1 << 2
+	FlagLicenseTag       uint16 = 1 << 3
+	FlagLicenseReference uint16 = 1 << 4
+	FlagLicenseIntro     uint16 = 1 << 5
+	FlagLicenseClue      uint16 = 1 << 6
+	FlagFalsePositive    uint16 = 1 << 7
+	FlagRequiredPhrase   uint16 = 1 << 8
+	FlagContinuous       uint16 = 1 << 9
+	FlagDeprecated       uint16 = 1 << 10
 )
 
 const (
@@ -35,7 +35,6 @@ const (
 	maxNodeCount  = 10_000_000
 	maxEdgeCount  = 10_000_000
 	maxStringLen  = 16 << 20
-	maxListLen    = 10_000
 	bufferSize    = 256 << 10
 	unknownOS     = 255
 )
@@ -51,16 +50,12 @@ type Info struct {
 
 // Rule is the source data needed to build the matching indexes.
 type Rule struct {
-	ID                  string
-	Expression          string
-	Text                []byte
-	Tokens              []uint32
-	Language            string
-	ReferencedFilenames []string
-	RequiredPhrases     []string
-	Flags               uint16
-	Relevance           uint8
-	MinimumCoverage     uint8
+	ID         string
+	Expression string
+	Text       []byte
+	Tokens     []uint32
+	Flags      uint16
+	Relevance  uint8
 }
 
 // Index is a decoded corpus.
@@ -192,20 +187,11 @@ func writeRule(w io.Writer, rule Rule) error {
 	if err := writeString(w, rule.Expression); err != nil {
 		return err
 	}
-	if err := binary.Write(w, binary.LittleEndian, rule.Flags); err != nil {
-		return fmt.Errorf("corpus: write flags for %q: %w", rule.ID, err)
-	}
-	if _, err := w.Write([]byte{rule.Relevance, rule.MinimumCoverage}); err != nil {
-		return fmt.Errorf("corpus: write thresholds for %q: %w", rule.ID, err)
-	}
-	if err := writeString(w, rule.Language); err != nil {
-		return err
-	}
-	if err := writeStrings(w, rule.ReferencedFilenames); err != nil {
-		return err
-	}
-	if err := writeStrings(w, rule.RequiredPhrases); err != nil {
-		return err
+	var metadata [3]byte
+	binary.LittleEndian.PutUint16(metadata[:2], rule.Flags)
+	metadata[2] = rule.Relevance
+	if _, err := w.Write(metadata[:]); err != nil {
+		return fmt.Errorf("corpus: write metadata for %q: %w", rule.ID, err)
 	}
 	if err := writeUint32s(w, rule.Tokens); err != nil {
 		return err
@@ -400,40 +386,20 @@ func readRule(r *bufio.Reader) (Rule, error) {
 	if err != nil {
 		return Rule{}, err
 	}
-	var flags uint16
-	if err := binary.Read(r, binary.LittleEndian, &flags); err != nil {
-		return Rule{}, fmt.Errorf("read flags: %w", err)
-	}
-	var thresholds [2]byte
-	if _, err := io.ReadFull(r, thresholds[:]); err != nil {
-		return Rule{}, fmt.Errorf("read thresholds: %w", err)
-	}
-	language, err := readString(r)
-	if err != nil {
-		return Rule{}, err
-	}
-	referencedFilenames, err := readStrings(r, maxListLen)
-	if err != nil {
-		return Rule{}, err
-	}
-	requiredPhrases, err := readStrings(r, maxListLen)
-	if err != nil {
-		return Rule{}, err
+	var metadata [3]byte
+	if _, err := io.ReadFull(r, metadata[:]); err != nil {
+		return Rule{}, fmt.Errorf("read metadata: %w", err)
 	}
 	tokens, err := readUint32s(r, maxTokenCount)
 	if err != nil {
 		return Rule{}, err
 	}
 	return Rule{
-		ID:                  id,
-		Expression:          expression,
-		Tokens:              tokens,
-		Language:            language,
-		ReferencedFilenames: referencedFilenames,
-		RequiredPhrases:     requiredPhrases,
-		Flags:               flags,
-		Relevance:           thresholds[0],
-		MinimumCoverage:     thresholds[1],
+		ID:         id,
+		Expression: expression,
+		Tokens:     tokens,
+		Flags:      binary.LittleEndian.Uint16(metadata[:2]),
+		Relevance:  metadata[2],
 	}, nil
 }
 

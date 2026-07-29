@@ -32,23 +32,19 @@ type sourceVersion struct {
 }
 
 type metadata struct {
-	Key                 string   `yaml:"key"`
-	LicenseExpression   string   `yaml:"license_expression"`
-	Language            string   `yaml:"language"`
-	ReferencedFilenames []string `yaml:"referenced_filenames"`
-	RequiredPhrases     []string `yaml:"required_phrases"`
-	Relevance           *int     `yaml:"relevance"`
-	MinimumCoverage     int      `yaml:"minimum_coverage"`
-	IsLicenseText       bool     `yaml:"is_license_text"`
-	IsLicenseNotice     bool     `yaml:"is_license_notice"`
-	IsLicenseTag        bool     `yaml:"is_license_tag"`
-	IsLicenseReference  bool     `yaml:"is_license_reference"`
-	IsLicenseIntro      bool     `yaml:"is_license_intro"`
-	IsLicenseClue       bool     `yaml:"is_license_clue"`
-	IsFalsePositive     bool     `yaml:"is_false_positive"`
-	IsRequiredPhrase    bool     `yaml:"is_required_phrase"`
-	IsContinuous        bool     `yaml:"is_continuous"`
-	IsDeprecated        bool     `yaml:"is_deprecated"`
+	Key                string `yaml:"key"`
+	LicenseExpression  string `yaml:"license_expression"`
+	Relevance          *int   `yaml:"relevance"`
+	IsLicenseText      bool   `yaml:"is_license_text"`
+	IsLicenseNotice    bool   `yaml:"is_license_notice"`
+	IsLicenseTag       bool   `yaml:"is_license_tag"`
+	IsLicenseReference bool   `yaml:"is_license_reference"`
+	IsLicenseIntro     bool   `yaml:"is_license_intro"`
+	IsLicenseClue      bool   `yaml:"is_license_clue"`
+	IsFalsePositive    bool   `yaml:"is_false_positive"`
+	IsRequiredPhrase   bool   `yaml:"is_required_phrase"`
+	IsContinuous       bool   `yaml:"is_continuous"`
+	IsDeprecated       bool   `yaml:"is_deprecated"`
 }
 
 func main() {
@@ -257,20 +253,12 @@ func loadRule(path string, licenseText bool) (corpus.Rule, error) {
 	if relevance < 0 || relevance > 100 {
 		return corpus.Rule{}, fmt.Errorf("%s: relevance %d is outside 0-100", path, relevance)
 	}
-	if meta.MinimumCoverage < 0 || meta.MinimumCoverage > 100 {
-		return corpus.Rule{}, fmt.Errorf("%s: minimum coverage %d is outside 0-100", path, meta.MinimumCoverage)
-	}
-
 	return corpus.Rule{
-		ID:                  filepath.Base(path),
-		Expression:          expression,
-		Text:                text,
-		Language:            meta.Language,
-		ReferencedFilenames: meta.ReferencedFilenames,
-		RequiredPhrases:     meta.RequiredPhrases,
-		Flags:               flags(meta),
-		Relevance:           uint8(relevance),
-		MinimumCoverage:     uint8(meta.MinimumCoverage),
+		ID:         filepath.Base(path),
+		Expression: expression,
+		Text:       text,
+		Flags:      flags(meta),
+		Relevance:  uint8(relevance),
 	}, nil
 }
 

@@ -37,11 +37,6 @@ license_expression: AGPL-3.0
 is_license_notice: yes
 is_false_positive: yes
 relevance: 85
-minimum_coverage: 70
-referenced_filenames:
-  - LICENSE
-required_phrases:
-  - Affero General Public License
 ---
 
 This package is licensed under the AGPL.
@@ -56,18 +51,12 @@ This package is licensed under the AGPL.
 	if got.Expression != "AGPL-3.0" {
 		t.Fatalf("expression = %q", got.Expression)
 	}
-	if got.Relevance != 85 || got.MinimumCoverage != 70 {
-		t.Fatalf("thresholds = %d, %d", got.Relevance, got.MinimumCoverage)
+	if got.Relevance != 85 {
+		t.Fatalf("relevance = %d", got.Relevance)
 	}
 	wantFlags := corpus.FlagLicenseNotice | corpus.FlagFalsePositive
 	if got.Flags != wantFlags {
 		t.Fatalf("flags = %d, want %d", got.Flags, wantFlags)
-	}
-	if len(got.ReferencedFilenames) != 1 || got.ReferencedFilenames[0] != "LICENSE" {
-		t.Fatalf("referenced filenames = %#v", got.ReferencedFilenames)
-	}
-	if len(got.RequiredPhrases) != 1 || got.RequiredPhrases[0] != "Affero General Public License" {
-		t.Fatalf("required phrases = %#v", got.RequiredPhrases)
 	}
 	if !bytes.Equal(got.Text, []byte("\nThis package is licensed under the AGPL.\n")) {
 		t.Fatalf("text = %q", got.Text)

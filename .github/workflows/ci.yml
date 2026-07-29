@@ -64,11 +64,19 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Read pinned corpus commit
+        id: corpus_version
+        shell: bash
+        run: |
+          commit="$(sed -n 's/^commit=//p' CORPUS_VERSION)"
+          [[ "$commit" =~ ^[0-9a-f]{40}$ ]]
+          printf 'commit=%s\n' "$commit" >> "$GITHUB_OUTPUT"
+
       - name: Check out pinned ScanCode corpus
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: aboutcode-org/scancode-toolkit
-          ref: 6ba59089789600479cda46c84c6d436774179092
+          ref: ${{ steps.corpus_version.outputs.commit }}
           path: .scancode
           persist-credentials: false
           sparse-checkout: |
