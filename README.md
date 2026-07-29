@@ -64,11 +64,17 @@ existing result changes or a new difference appears.
 Run the matching benchmarks with:
 
 ```bash
-script/benchmark .
+GOMAXPROCS=1 go test \
+  -run '^$' \
+  -bench . \
+  -benchmem \
+  -benchtime 1s \
+  -count 5 \
+  .
 ```
 
-Set `BENCH`, `BENCH_TIME`, `BENCH_COUNT`, or `GOMAXPROCS` to override the
-defaults.
+Use the standard `go test` flags to select benchmarks or change their duration
+and sample count.
 
 ## License
 
