@@ -1,0 +1,26 @@
+#!/usr/bin/env ruby
+
+require "shellwords"
+
+count = Integer(ENV.fetch("BENCH_COUNT", "5"), 10)
+abort "BENCH_COUNT must be positive" unless count.positive?
+
+benchmark = ENV.fetch("BENCH", ".")
+benchtime = ENV.fetch("BENCH_TIME", "1s")
+packages = ARGV.empty? ? ["./..."] : ARGV
+command = [
+  "go", "test",
+  "-run=^$",
+  "-bench=#{benchmark}",
+  "-benchmem",
+  "-benchtime=#{benchtime}",
+  "-count=#{count}",
+  *packages
+]
+environment = {"GOMAXPROCS" => ENV.fetch("GOMAXPROCS", "1")}
+environment_text = environment.map do |key, value|
+  "#{key}=#{Shellwords.escape(value)}"
+end.join(" ")
+
+warn "#{environment_text} #{Shellwords.join(command)}"
+exec(environment, *command)

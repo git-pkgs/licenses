@@ -1,0 +1,100 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go-version: ['1.25']
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ matrix.go-version }}
+
+      - name: Build
+        env:
+          CGO_ENABLED: 0
+        run: go build -v ./...
+
+      - name: Test
+        run: go test -v -race ./...
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.25'
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9
+        with:
+          version: latest
+
+  corpus:
+    name: Corpus reproducibility (${{ matrix.os }}, Go ${{ matrix.go-version }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        go-version: ['1.25.6', stable]
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check out pinned ScanCode corpus
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: aboutcode-org/scancode-toolkit
+          ref: 6ba59089789600479cda46c84c6d436774179092
+          path: .scancode
+          persist-credentials: false
+          sparse-checkout: |
+            src/licensedcode/data/licenses
+            src/licensedcode/data/rules
+            tests/licensedcode/data/datadriven/lic1
+            tests/licensedcode/data/datadriven/lic2
+            tests/licensedcode/data/datadriven/lic3
+            tests/licensedcode/data/datadriven/lic4
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ matrix.go-version }}
+
+      - name: Regenerate corpus
+        run: >
+          go run ./cmd/corpusgen
+          -scancode .scancode
+          -version-file CORPUS_VERSION
+          -output regenerated-corpus.bin.gz
+
+      - name: Compare corpus
+        run: cmp internal/corpus/corpus.bin.gz regenerated-corpus.bin.gz
+
+      - name: Check exact conformance baseline
+        env:
+          SCANCODE_TESTDATA: .scancode/tests/licensedcode/data
+        run: go test . -run '^TestScanCodeConformanceExact$' -v

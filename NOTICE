@@ -1,0 +1,25 @@
+ScanCode corpus attribution
+===========================
+
+The embedded license and rule corpus is derived from ScanCode Toolkit:
+https://github.com/aboutcode-org/scancode-toolkit
+
+Pinned source commit: 6ba59089789600479cda46c84c6d436774179092
+
+Copyright (c) nexB Inc. and others. All rights reserved.
+ScanCode is a trademark of nexB Inc.
+SPDX-License-Identifier: CC-BY-4.0
+
+The ScanCode license and rule data is licensed under the Creative Commons
+Attribution 4.0 International license:
+https://creativecommons.org/licenses/by/4.0/legalcode
+
+The data has been modified by selecting matching metadata and text from the
+ScanCode license and rule files, sorting the records, and encoding them as a
+deterministic compressed binary index.
+
+ScanCode Toolkit software is licensed under Apache-2.0. This module does not
+include ScanCode Toolkit software code.
+
+See https://aboutcode.org for more information about ScanCode and nexB open
+source projects.
