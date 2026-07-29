@@ -1,10 +1,11 @@
 package licenses
 
 import (
+	"cmp"
 	"context"
 	"errors"
+	"fmt"
 	"slices"
-	"sort"
 	"strings"
 	"sync"
 
@@ -21,9 +22,11 @@ const (
 	Hash Method = "hash"
 	// Exact is an exact token-sequence match within a larger input.
 	Exact Method = "exact"
-	// Seq is a local sequence-alignment match.
-	Seq Method = "seq"
 )
+
+// ErrTooManyMatches is returned when an input produces more exact-match
+// candidates than the matcher can safely filter.
+var ErrTooManyMatches = errors.New("licenses: too many exact-match candidates")
 
 // Result contains conclusive detections and weaker clue matches.
 type Result struct {
@@ -40,14 +43,23 @@ type Detection struct {
 
 // Match describes one rule match in the input.
 type Match struct {
-	RuleID     string
+	// RuleID is the ScanCode rule identifier.
+	RuleID string
+	// LicenseIDs contains identifiers copied from the rule expression.
 	LicenseIDs []string
-	Method     Method
-	Score      float64
-	Coverage   float64
-	Start      int
-	End        int
-	Matched    []byte
+	// Method identifies the exact matching stage that produced the match.
+	Method Method
+	// Score is the rule's 0-100 relevance, not a similarity score.
+	Score float64
+	// Coverage is 100 for every exact match.
+	Coverage float64
+	// Start is the inclusive byte offset into the input.
+	Start int
+	// End is the exclusive byte offset into the input.
+	End int
+	// Matched is a copy of input[Start:End] when WithMatchedText is set.
+	// It is nil otherwise.
+	Matched []byte
 }
 
 // Option configures a Matcher.
@@ -70,13 +82,21 @@ type Matcher struct {
 	matchedText bool
 }
 
+// Corpus returns information about the embedded corpus used by m. It returns
+// the zero value for a nil or uninitialized Matcher.
+func (m *Matcher) Corpus() CorpusInfo {
+	if m == nil || m.engine == nil {
+		return CorpusInfo{}
+	}
+	return m.engine.info
+}
+
 type matchEngine struct {
-	info            CorpusInfo
-	vocabulary      *tokenize.Vocabulary
-	rules           []corpus.Rule
-	requiredPhrases [][][]tokenize.ID
-	automaton       aho.Automaton
-	hashes          map[uint64][]uint32
+	info       CorpusInfo
+	vocabulary *tokenize.Vocabulary
+	rules      []corpus.Rule
+	automaton  aho.Automaton
+	hashes     map[uint64][]uint32
 }
 
 var (
@@ -119,17 +139,12 @@ func newMatchEngine(index corpus.Index) (*matchEngine, error) {
 		return nil, err
 	}
 	hashes := make(map[uint64][]uint32, len(index.Rules))
-	requiredPhrases := make([][][]tokenize.ID, len(index.Rules))
 	for ruleIndex, rule := range index.Rules {
 		if len(rule.Tokens) == 0 {
 			continue
 		}
 		hash := hashRuleTokens(rule.Tokens)
 		hashes[hash] = append(hashes[hash], uint32(ruleIndex))
-		for _, phrase := range rule.RequiredPhrases {
-			tokens := vocabulary.Tokenize([]byte(phrase))
-			requiredPhrases[ruleIndex] = append(requiredPhrases[ruleIndex], tokens.IDs)
-		}
 	}
 	return &matchEngine{
 		info: CorpusInfo{
@@ -137,15 +152,16 @@ func newMatchEngine(index corpus.Index) (*matchEngine, error) {
 			RuleCount:    index.Info.RuleCount,
 			SourceCommit: index.Info.SourceCommit,
 		},
-		vocabulary:      vocabulary,
-		rules:           index.Rules,
-		requiredPhrases: requiredPhrases,
-		automaton:       index.Automaton,
-		hashes:          hashes,
+		vocabulary: vocabulary,
+		rules:      index.Rules,
+		automaton:  index.Automaton,
+		hashes:     hashes,
 	}, nil
 }
 
-// Match finds exact normalized rule matches in b.
+// Match finds exact normalized rule matches in b. It returns
+// ErrTooManyMatches when the input exceeds the exact-match candidate limit;
+// callers can identify it with errors.Is.
 func (m *Matcher) Match(ctx context.Context, b []byte) (Result, error) {
 	return m.match(ctx, b, allExactFilters)
 }
@@ -170,7 +186,10 @@ func (m *Matcher) match(ctx context.Context, b []byte, filters exactFilterOption
 	if err != nil {
 		return Result{}, err
 	}
-	candidates = filterExactMatches(m.engine, candidates, tokens.IDs, filters)
+	candidates, err = filterExactMatches(ctx, m.engine, candidates, filters)
+	if err != nil {
+		return Result{}, err
+	}
 	for _, candidate := range candidates {
 		rule := m.engine.rules[candidate.ruleIndex]
 		start := tokens.Offsets[candidate.tokenStart].Start
@@ -180,6 +199,8 @@ func (m *Matcher) match(ctx context.Context, b []byte, filters exactFilterOption
 	sortResult(&result)
 	return result, nil
 }
+
+const maxExactMatchCandidates = 100_000
 
 func (e *matchEngine) collectExactMatches(
 	ctx context.Context,
@@ -213,6 +234,9 @@ func (e *matchEngine) collectExactMatches(
 			if ruleLength > position+1 {
 				continue
 			}
+			if len(candidates) == maxExactMatchCandidates {
+				return nil, exactMatchCandidateLimitError()
+			}
 			candidates = append(candidates, exactMatch{
 				ruleIndex:  ruleIndex,
 				method:     Exact,
@@ -222,6 +246,14 @@ func (e *matchEngine) collectExactMatches(
 		}
 	}
 	return candidates, nil
+}
+
+func exactMatchCandidateLimitError() error {
+	return fmt.Errorf(
+		"%w: limit %d",
+		ErrTooManyMatches,
+		maxExactMatchCandidates,
+	)
 }
 
 func (e *matchEngine) hashMatches(tokens []tokenize.ID) []uint32 {
@@ -336,28 +368,28 @@ func sortResult(result *Result) {
 	for index := range result.Detections {
 		sortMatches(result.Detections[index].Matches)
 	}
-	sort.Slice(result.Detections, func(first, second int) bool {
-		firstStart := result.Detections[first].Matches[0].Start
-		secondStart := result.Detections[second].Matches[0].Start
-		if firstStart != secondStart {
-			return firstStart < secondStart
+	slices.SortFunc(result.Detections, func(first, second Detection) int {
+		firstStart := first.Matches[0].Start
+		secondStart := second.Matches[0].Start
+		if compared := cmp.Compare(firstStart, secondStart); compared != 0 {
+			return compared
 		}
-		return result.Detections[first].Expression < result.Detections[second].Expression
+		return cmp.Compare(first.Expression, second.Expression)
 	})
 	sortMatches(result.Clues)
 }
 
 func sortMatches(matches []Match) {
-	sort.Slice(matches, func(first, second int) bool {
-		if matches[first].Start != matches[second].Start {
-			return matches[first].Start < matches[second].Start
+	slices.SortFunc(matches, func(first, second Match) int {
+		if compared := cmp.Compare(first.Start, second.Start); compared != 0 {
+			return compared
 		}
-		if matches[first].End != matches[second].End {
-			return matches[first].End < matches[second].End
+		if compared := cmp.Compare(first.End, second.End); compared != 0 {
+			return compared
 		}
-		if matches[first].RuleID != matches[second].RuleID {
-			return matches[first].RuleID < matches[second].RuleID
+		if compared := cmp.Compare(first.RuleID, second.RuleID); compared != 0 {
+			return compared
 		}
-		return matches[first].Method < matches[second].Method
+		return cmp.Compare(first.Method, second.Method)
 	})
 }

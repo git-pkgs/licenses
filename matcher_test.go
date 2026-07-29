@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 
@@ -48,6 +49,21 @@ func TestMatcherWholeTextHash(t *testing.T) {
 	}
 	if string(match.Matched) != "ALPHA\tbeta" {
 		t.Fatalf("matched text = %q", match.Matched)
+	}
+}
+
+func TestMatcherCorpus(t *testing.T) {
+	t.Parallel()
+
+	matcher := testMatcher(t, false)
+	if got := matcher.Corpus(); got.Version != "test" ||
+		got.RuleCount != len(matcher.engine.rules) ||
+		got.SourceCommit != "test-commit" {
+		t.Fatalf("corpus = %#v", got)
+	}
+	var nilMatcher *Matcher
+	if got := nilMatcher.Corpus(); got != (CorpusInfo{}) {
+		t.Fatalf("nil matcher corpus = %#v", got)
 	}
 }
 
@@ -110,6 +126,58 @@ func TestMatcherReturnsContextError(t *testing.T) {
 	cancel()
 	if _, err := matcher.Match(ctx, []byte("alpha beta")); !errors.Is(err, context.Canceled) {
 		t.Fatalf("error = %v, want context.Canceled", err)
+	}
+}
+
+func TestCollectExactMatchesEnforcesCandidateLimit(t *testing.T) {
+	t.Parallel()
+
+	const token = 1
+	rules := []corpus.Rule{
+		{Tokens: []uint32{token}},
+		{Tokens: []uint32{token}},
+	}
+	automaton, err := aho.Build([]aho.Pattern{
+		{Tokens: rules[0].Tokens, Value: 0},
+		{Tokens: rules[1].Tokens, Value: 1},
+	}, len(rules))
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine := matchEngine{rules: rules, automaton: automaton}
+	tokens := make([]tokenize.ID, maxExactMatchCandidates/len(rules)+1)
+	for index := range tokens {
+		tokens[index] = token
+	}
+
+	_, err = engine.collectExactMatches(context.Background(), tokens)
+	if err == nil {
+		t.Fatal("collectExactMatches accepted too many candidates")
+	}
+	if !errors.Is(err, ErrTooManyMatches) {
+		t.Fatalf("error = %v, want ErrTooManyMatches", err)
+	}
+	if !strings.Contains(err.Error(), fmt.Sprint(maxExactMatchCandidates)) {
+		t.Fatalf("error %q does not name limit %d", err, maxExactMatchCandidates)
+	}
+}
+
+func TestEmbeddedMatcherCapsRepeatedCandidates(t *testing.T) {
+	matcher, err := New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := []byte(strings.Repeat("mit license ", 100_000))
+
+	_, err = matcher.Match(context.Background(), input)
+	if err == nil {
+		t.Fatal("Match accepted too many candidates")
+	}
+	if !errors.Is(err, ErrTooManyMatches) {
+		t.Fatalf("error = %v, want ErrTooManyMatches", err)
+	}
+	if !strings.Contains(err.Error(), fmt.Sprint(maxExactMatchCandidates)) {
+		t.Fatalf("error %q does not name limit %d", err, maxExactMatchCandidates)
 	}
 }
 

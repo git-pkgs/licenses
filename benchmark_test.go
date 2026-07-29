@@ -2,6 +2,7 @@ package licenses
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -96,6 +97,26 @@ func BenchmarkMatchCorpusHash(b *testing.B) {
 			}
 			benchmarkResult = result
 		}
+	}
+}
+
+func BenchmarkMatchRepeatedShortNotice(b *testing.B) {
+	matcher, err := New()
+	if err != nil {
+		b.Fatal(err)
+	}
+	for _, repetitions := range []int{5_000, 10_000, 15_000} {
+		input := []byte(strings.Repeat("mit license ", repetitions))
+		b.Run(fmt.Sprint(repetitions), func(b *testing.B) {
+			b.SetBytes(int64(len(input)))
+			for b.Loop() {
+				result, err := matcher.Match(context.Background(), input)
+				if err != nil {
+					b.Fatal(err)
+				}
+				benchmarkResult = result
+			}
+		})
 	}
 }
 

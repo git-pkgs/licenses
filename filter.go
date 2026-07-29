@@ -1,26 +1,19 @@
 package licenses
 
 import (
+	"cmp"
+	"context"
 	"slices"
-	"sort"
 
 	"github.com/git-pkgs/licenses/internal/corpus"
-	"github.com/git-pkgs/licenses/internal/tokenize"
 )
 
 const (
-	overlapSmall      = 0.10
 	overlapMedium     = 0.40
 	overlapLarge      = 0.70
 	overlapExtraLarge = 0.90
 	minimumMatchCount = 2
-)
-
-const (
-	methodOrderHash = iota
-	methodOrderExact
-	methodOrderSeq
-	methodOrderUnknown
+	filterContextMask = 4095
 )
 
 type exactMatch struct {
@@ -35,179 +28,188 @@ func (m exactMatch) length() int {
 }
 
 type exactFilterOptions struct {
-	requiredPhrases bool
-	contained       bool
-	overlapping     bool
-	falsePositive   bool
+	contained     bool
+	overlapping   bool
+	falsePositive bool
 }
 
 var allExactFilters = exactFilterOptions{
-	requiredPhrases: true,
-	contained:       true,
-	overlapping:     true,
-	falsePositive:   true,
+	contained:     true,
+	overlapping:   true,
+	falsePositive: true,
 }
 
 func filterExactMatches(
+	ctx context.Context,
 	engine *matchEngine,
 	matches []exactMatch,
-	tokens []tokenize.ID,
 	options exactFilterOptions,
-) []exactMatch {
-	if options.requiredPhrases {
-		matches = filterMissingRequiredPhrases(engine, matches, tokens)
+) ([]exactMatch, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 
+	if len(matches) >= minimumMatchCount {
+		slices.SortStableFunc(matches, compareExactMatches)
+	}
+
+	var err error
 	var discardedContained, discardedOverlapping []exactMatch
 	if options.contained {
-		matches, discardedContained = filterContainedMatches(matches)
+		matches, discardedContained, err = filterContainedMatches(ctx, matches)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if options.overlapping {
-		matches, discardedOverlapping = filterOverlappingMatches(engine, matches)
+		matches, discardedOverlapping, err = filterOverlappingMatches(ctx, engine, matches)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if len(discardedContained) != 0 {
-		restored := restoreNonOverlapping(matches, discardedContained)
-		matches = append(matches, restored...)
+		matches, err = restoreNonOverlapping(ctx, matches, discardedContained)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if len(discardedOverlapping) != 0 {
-		restored := restoreNonOverlapping(matches, discardedOverlapping)
-		matches = append(matches, restored...)
+		matches, err = restoreNonOverlapping(ctx, matches, discardedOverlapping)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if options.contained {
-		matches, _ = filterContainedMatches(matches)
+		matches, _, err = filterContainedMatches(ctx, matches)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if options.falsePositive {
-		matches = filterFalsePositiveMatches(engine, matches)
+		matches, err = filterFalsePositiveMatches(ctx, engine, matches)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	sortExactMatches(engine, matches)
-	return matches
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return matches, nil
 }
 
-func filterMissingRequiredPhrases(
-	engine *matchEngine,
+// matches must be ordered by compareExactMatches.
+func filterContainedMatches(
+	ctx context.Context,
 	matches []exactMatch,
-	tokens []tokenize.ID,
-) []exactMatch {
-	kept := make([]exactMatch, 0, len(matches))
-	for _, match := range matches {
-		phrases := engine.requiredPhrases[match.ruleIndex]
-		if len(phrases) == 0 {
-			kept = append(kept, match)
+) ([]exactMatch, []exactMatch, error) {
+	if len(matches) < minimumMatchCount {
+		return matches, nil, nil
+	}
+
+	keep := make([]bool, len(matches))
+	maxEnd := -1
+	for index, match := range matches {
+		if err := checkFilterContext(ctx, index); err != nil {
+			return nil, nil, err
+		}
+		if match.tokenEnd <= maxEnd {
 			continue
 		}
-		matchedTokens := tokens[match.tokenStart:match.tokenEnd]
-		hasAll := true
-		for _, phrase := range phrases {
-			if len(phrase) == 0 || !containsTokenSequence(matchedTokens, phrase) {
-				hasAll = false
-				break
-			}
-		}
-		if hasAll {
-			kept = append(kept, match)
-		}
+		keep[index] = true
+		maxEnd = match.tokenEnd
 	}
-	return kept
+	kept, discarded := splitExactMatches(matches, keep)
+	return kept, discarded, nil
 }
 
-func containsTokenSequence(tokens, sequence []tokenize.ID) bool {
-	if len(sequence) > len(tokens) {
-		return false
-	}
-	for start := 0; start <= len(tokens)-len(sequence); start++ {
-		if slices.Equal(tokens[start:start+len(sequence)], sequence) {
-			return true
-		}
-	}
-	return false
-}
-
-func filterContainedMatches(matches []exactMatch) ([]exactMatch, []exactMatch) {
-	if len(matches) < minimumMatchCount {
-		return matches, nil
-	}
-	matches = slices.Clone(matches)
-	sort.SliceStable(matches, func(first, second int) bool {
-		return exactMatchOrder(matches[first], matches[second])
-	})
-
-	var discarded []exactMatch
-	for current := 0; current < len(matches)-1; current++ {
-		for next := current + 1; next < len(matches); {
-			if matches[next].tokenEnd > matches[current].tokenEnd {
-				break
-			}
-			discarded = append(discarded, matches[next])
-			matches = slices.Delete(matches, next, next+1)
-		}
-	}
-	return matches, discarded
-}
-
+// matches must be ordered by compareExactMatches.
 func filterOverlappingMatches(
+	ctx context.Context,
 	engine *matchEngine,
 	matches []exactMatch,
-) ([]exactMatch, []exactMatch) {
+) ([]exactMatch, []exactMatch, error) {
 	if len(matches) < minimumMatchCount {
-		return matches, nil
+		return matches, nil, nil
 	}
-	matches = slices.Clone(matches)
-	sort.SliceStable(matches, func(first, second int) bool {
-		return exactMatchOrder(matches[first], matches[second])
-	})
 
-	var discarded []exactMatch
+	keep := make([]bool, len(matches))
+	for index := range keep {
+		keep[index] = true
+	}
+	previousKept := -1
+	operations := 0
 	for current := 0; current < len(matches)-1; current++ {
-		for next := current + 1; next < len(matches); {
+		if !keep[current] {
+			continue
+		}
+		if err := checkFilterContext(ctx, operations); err != nil {
+			return nil, nil, err
+		}
+		operations++
+		for next := current + 1; next < len(matches); next++ {
+			if !keep[next] {
+				continue
+			}
+			if err := checkFilterContext(ctx, operations); err != nil {
+				return nil, nil, err
+			}
+			operations++
 			if matches[next].tokenStart >= matches[current].tokenEnd {
 				break
 			}
-			overlap := matchOverlap(matches[current], matches[next])
-			if overlap == 0 {
-				next++
-				continue
-			}
-			currentRule := engine.rules[matches[current].ruleIndex]
-			nextRule := engine.rules[matches[next].ruleIndex]
-			if currentRule.Flags&corpus.FlagFalsePositive != 0 &&
-				nextRule.Flags&corpus.FlagFalsePositive != 0 {
-				next++
-				continue
-			}
-
-			remove := overlappingMatchToRemove(currentRule, nextRule, matches[current], matches[next], overlap)
-			switch remove {
+			switch overlapRemovalForPair(engine, matches, current, next, previousKept) {
 			case removeNext:
-				discarded = append(discarded, matches[next])
-				matches = slices.Delete(matches, next, next+1)
+				keep[next] = false
 				continue
 			case removeCurrent:
-				discarded = append(discarded, matches[current])
-				matches = slices.Delete(matches, current, current+1)
-				current--
-				next = len(matches)
-				continue
+				keep[current] = false
 			}
-
-			if current > 0 {
-				previous := matches[current-1]
-				if matchOverlap(previous, matches[next]) == 0 {
-					combinedOverlap := matchOverlap(matches[current], previous) +
-						matchOverlap(matches[current], matches[next])
-					if float64(combinedOverlap) >= float64(matches[current].length())*overlapExtraLarge {
-						discarded = append(discarded, matches[current])
-						matches = slices.Delete(matches, current, current+1)
-						current--
-						next = len(matches)
-						continue
-					}
-				}
+			if !keep[current] {
+				break
 			}
-			next++
+		}
+		if keep[current] {
+			previousKept = current
 		}
 	}
-	return matches, discarded
+	kept, discarded := splitExactMatches(matches, keep)
+	return kept, discarded, nil
+}
+
+func overlapRemovalForPair(
+	engine *matchEngine,
+	matches []exactMatch,
+	current, next, previous int,
+) overlapRemoval {
+	overlap := matchOverlap(matches[current], matches[next])
+	if overlap == 0 {
+		return removeNeither
+	}
+	currentRule := engine.rules[matches[current].ruleIndex]
+	nextRule := engine.rules[matches[next].ruleIndex]
+	if currentRule.Flags&corpus.FlagFalsePositive != 0 &&
+		nextRule.Flags&corpus.FlagFalsePositive != 0 {
+		return removeNeither
+	}
+	if remove := overlappingMatchToRemove(
+		currentRule,
+		nextRule,
+		matches[current],
+		matches[next],
+		overlap,
+	); remove != removeNeither {
+		return remove
+	}
+	if previous < 0 || matchOverlap(matches[previous], matches[next]) != 0 {
+		return removeNeither
+	}
+	combinedOverlap := matchOverlap(matches[current], matches[previous]) + overlap
+	if float64(combinedOverlap) >= float64(matches[current].length())*overlapExtraLarge {
+		return removeCurrent
+	}
+	return removeNeither
 }
 
 type overlapRemoval uint8
@@ -257,34 +259,107 @@ func overlappingMatchToRemove(
 	return removeNeither
 }
 
+// matches and discarded must be ordered by compareExactMatches.
 func restoreNonOverlapping(
+	ctx context.Context,
 	matches, discarded []exactMatch,
-) []exactMatch {
-	var restored []exactMatch
-	for _, candidate := range discarded {
-		intersects := false
-		for _, match := range matches {
-			if matchOverlap(candidate, match) != 0 {
-				intersects = true
-				break
-			}
+) ([]exactMatch, error) {
+	type interval struct {
+		start int
+		end   int
+	}
+
+	unions := make([]interval, 0, len(matches))
+	for index, match := range matches {
+		if err := checkFilterContext(ctx, index); err != nil {
+			return nil, err
 		}
-		if intersects {
+		if len(unions) == 0 || match.tokenStart >= unions[len(unions)-1].end {
+			unions = append(unions, interval{start: match.tokenStart, end: match.tokenEnd})
+			continue
+		}
+		if match.tokenEnd > unions[len(unions)-1].end {
+			unions[len(unions)-1].end = match.tokenEnd
+		}
+	}
+
+	restored := make([]exactMatch, 0, len(discarded))
+	unionIndex := 0
+	for index, candidate := range discarded {
+		if err := checkFilterContext(ctx, index); err != nil {
+			return nil, err
+		}
+		for unionIndex < len(unions) && unions[unionIndex].end <= candidate.tokenStart {
+			unionIndex++
+		}
+		if unionIndex < len(unions) && unions[unionIndex].start < candidate.tokenEnd {
 			continue
 		}
 		restored = append(restored, candidate)
 	}
-	return restored
+	return mergeExactMatches(matches, restored), nil
 }
 
-func filterFalsePositiveMatches(engine *matchEngine, matches []exactMatch) []exactMatch {
+func mergeExactMatches(first, second []exactMatch) []exactMatch {
+	if len(second) == 0 {
+		return first
+	}
+	merged := make([]exactMatch, 0, len(first)+len(second))
+	firstIndex, secondIndex := 0, 0
+	for firstIndex < len(first) && secondIndex < len(second) {
+		if compareExactMatches(first[firstIndex], second[secondIndex]) <= 0 {
+			merged = append(merged, first[firstIndex])
+			firstIndex++
+		} else {
+			merged = append(merged, second[secondIndex])
+			secondIndex++
+		}
+	}
+	merged = append(merged, first[firstIndex:]...)
+	merged = append(merged, second[secondIndex:]...)
+	return merged
+}
+
+func splitExactMatches(
+	matches []exactMatch,
+	keep []bool,
+) ([]exactMatch, []exactMatch) {
 	kept := make([]exactMatch, 0, len(matches))
-	for _, match := range matches {
+	discarded := make([]exactMatch, 0, len(matches))
+	for index, match := range matches {
+		if keep[index] {
+			kept = append(kept, match)
+		} else {
+			discarded = append(discarded, match)
+		}
+	}
+	return kept, discarded
+}
+
+func checkFilterContext(ctx context.Context, operation int) error {
+	if operation&filterContextMask == 0 {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func filterFalsePositiveMatches(
+	ctx context.Context,
+	engine *matchEngine,
+	matches []exactMatch,
+) ([]exactMatch, error) {
+	kept := make([]exactMatch, 0, len(matches))
+	for index, match := range matches {
+		if err := checkFilterContext(ctx, index); err != nil {
+			return nil, err
+		}
 		if engine.rules[match.ruleIndex].Flags&corpus.FlagFalsePositive == 0 {
 			kept = append(kept, match)
 		}
 	}
-	return kept
+	return kept, nil
 }
 
 func matchOverlap(first, second exactMatch) int {
@@ -293,41 +368,27 @@ func matchOverlap(first, second exactMatch) int {
 	return max(0, end-start)
 }
 
-func exactMatchOrder(first, second exactMatch) bool {
-	if first.tokenStart != second.tokenStart {
-		return first.tokenStart < second.tokenStart
+func compareExactMatches(first, second exactMatch) int {
+	if compared := cmp.Compare(first.tokenStart, second.tokenStart); compared != 0 {
+		return compared
 	}
-	if first.length() != second.length() {
-		return first.length() > second.length()
+	if compared := cmp.Compare(second.length(), first.length()); compared != 0 {
+		return compared
 	}
-	if first.method != second.method {
-		return methodOrder(first.method) < methodOrder(second.method)
-	}
-	return first.ruleIndex < second.ruleIndex
+	return cmp.Compare(first.ruleIndex, second.ruleIndex)
 }
 
 func sortExactMatches(engine *matchEngine, matches []exactMatch) {
-	sort.SliceStable(matches, func(first, second int) bool {
-		if matches[first].tokenStart != matches[second].tokenStart {
-			return matches[first].tokenStart < matches[second].tokenStart
+	slices.SortStableFunc(matches, func(first, second exactMatch) int {
+		if compared := cmp.Compare(first.tokenStart, second.tokenStart); compared != 0 {
+			return compared
 		}
-		if matches[first].tokenEnd != matches[second].tokenEnd {
-			return matches[first].tokenEnd < matches[second].tokenEnd
+		if compared := cmp.Compare(first.tokenEnd, second.tokenEnd); compared != 0 {
+			return compared
 		}
-		return engine.rules[matches[first].ruleIndex].ID <
-			engine.rules[matches[second].ruleIndex].ID
+		return cmp.Compare(
+			engine.rules[first.ruleIndex].ID,
+			engine.rules[second.ruleIndex].ID,
+		)
 	})
-}
-
-func methodOrder(method Method) int {
-	switch method {
-	case Hash:
-		return methodOrderHash
-	case Exact:
-		return methodOrderExact
-	case Seq:
-		return methodOrderSeq
-	default:
-		return methodOrderUnknown
-	}
 }

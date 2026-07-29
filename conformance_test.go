@@ -228,12 +228,15 @@ func logConformanceMatchTrace(t *testing.T, matcher *Matcher, testCase conforman
 	if err != nil {
 		t.Fatalf("%s: trace exact matches: %v", testCase.path, err)
 	}
-	filtered := filterExactMatches(
+	filtered, err := filterExactMatches(
+		context.Background(),
 		matcher.engine,
 		raw,
-		tokenized.IDs,
 		allExactFilters,
 	)
+	if err != nil {
+		t.Fatalf("%s: filter exact matches: %v", testCase.path, err)
+	}
 	for _, match := range raw {
 		rule := matcher.engine.rules[match.ruleIndex]
 		if !slices.Contains(testCase.expected, rule.Expression) && match.length() < 100 {
@@ -375,24 +378,16 @@ func profileConformanceFilters(t *testing.T, matcher *Matcher, cases []conforman
 	}{
 		{name: "raw"},
 		{
-			name: "required phrases",
-			filters: exactFilterOptions{
-				requiredPhrases: true,
-			},
-		},
-		{
 			name: "contained",
 			filters: exactFilterOptions{
-				requiredPhrases: true,
-				contained:       true,
+				contained: true,
 			},
 		},
 		{
 			name: "overlapping",
 			filters: exactFilterOptions{
-				requiredPhrases: true,
-				contained:       true,
-				overlapping:     true,
+				contained:   true,
+				overlapping: true,
 			},
 		},
 		{name: "false positives", filters: allExactFilters},

@@ -18,8 +18,9 @@ The data has been modified by selecting matching metadata and text from the
 ScanCode license and rule files, sorting the records, and encoding them as a
 deterministic compressed binary index.
 
-ScanCode Toolkit software is licensed under Apache-2.0. This module does not
-include ScanCode Toolkit software code.
+ScanCode Toolkit software is licensed under Apache-2.0. This module implements
+compatible tokenization and matching behavior but does not redistribute
+ScanCode Toolkit source files.
 
 See https://aboutcode.org for more information about ScanCode and nexB open
 source projects.
