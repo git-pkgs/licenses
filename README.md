@@ -1,59 +1,77 @@
 # licenses
 
-`licenses` matches byte slices against the ScanCode license rule corpus. It is
-a Go library with no runtime network access, cgo, Python, or filesystem scan.
+Go library for matching license text against ScanCode's license rule corpus.
+
+The corpus is embedded in the package. Matching needs no network access, cgo,
+or Python.
+
+## Installation
+
+```bash
+go get github.com/git-pkgs/licenses
+```
+
+## Usage
 
 ```go
 matcher, err := licenses.New()
 if err != nil {
 	return err
 }
+
 result, err := matcher.Match(ctx, text)
 if err != nil {
 	return err
 }
+
+for _, detection := range result.Detections {
+	fmt.Println(detection.Expression)
+}
 ```
 
-The matcher supports normalized whole-text hash matches and exact
-token-sequence matches, followed by ScanCode-style containment and overlap
-filtering. It does not perform sequence alignment or fuzzy matching.
-`Matcher` shares one read-only decoded corpus per process and is safe for
-concurrent calls to `Match`. A reflowed license, an edited paragraph, or text
-with a copyright line spliced into the middle may not match.
+Matching uses normalized whole-text hashes and exact token sequences. It does
+not use fuzzy or sequence matching, so edits within a license can prevent a
+match.
 
-The corpus is pinned in `CORPUS_VERSION` and committed as one embedded binary
-index. Regenerate it from a clean checkout at that commit:
+## Corpus
 
-```sh
+The ScanCode commit is pinned in `CORPUS_VERSION`. Regenerate the embedded
+index from a clean checkout at that commit:
+
+```bash
 go run ./cmd/corpusgen \
   -scancode /path/to/scancode-toolkit \
   -version-file CORPUS_VERSION \
   -output internal/corpus/corpus.bin.gz
 ```
 
-Corpus attribution and modification details are in `NOTICE`.
+## Conformance
 
-Run usage benchmarks with fixed single-core defaults and five samples:
+The exact matcher passes 1,535 of 1,786 cases (85.95%) from ScanCode's four
+active data-driven detection suites. Run the suite against a ScanCode checkout
+at the commit in `CORPUS_VERSION`:
 
-```sh
-BENCH='Matcher|Match' script/benchmark .
-```
-
-`BENCH`, `BENCH_TIME`, `BENCH_COUNT`, and `GOMAXPROCS` can override the
-defaults. Save stdout from two revisions to compare their results over time.
-Cold corpus loading, decompression, and failure-link construction have separate
-benchmarks under `./internal/corpus`.
-
-The exact-core baseline passes 1,535 of 1,786 cases (85.95%) from ScanCode's
-four active data-driven detection suites. Run it against a checkout at the
-commit in `CORPUS_VERSION`:
-
-```sh
+```bash
 SCANCODE_TESTDATA=/path/to/scancode-toolkit/tests/licensedcode/data \
   go test . -run '^TestScanCodeConformanceExact$' -v
 ```
 
-The remaining cases are recorded as exact-core won't-fix divergences, with the
-stage and ScanCode source commit attached. CI rejects a new divergence or a
-change to an existing one, even if the aggregate pass count rises. Set
-`UPDATE_CONFORMANCE=1` only after an intentional matcher change.
+Known differences are recorded in the conformance baseline. CI fails if an
+existing result changes or a new difference appears.
+
+## Benchmarks
+
+Run the matching benchmarks with:
+
+```bash
+script/benchmark .
+```
+
+Set `BENCH`, `BENCH_TIME`, `BENCH_COUNT`, or `GOMAXPROCS` to override the
+defaults.
+
+## License
+
+The Go code is released under the MIT License. ScanCode's license and rule data
+is licensed under CC-BY-4.0. See [NOTICE](NOTICE) for attribution and
+modification details.
