@@ -37,7 +37,9 @@ licenses -scope all -max-files 0 /path/to/repository
 ```
 
 The command reports detections by file with the matching rule, expression,
-rule kind, score, coverage, and byte range. JSON is used when output is
+rule kind, score, coverage, and byte range. Each JSON file record also reports
+`license_text_coverage`, the percentage of decoded file bytes covered by the
+union of licence-text and notice matches. JSON is used when output is
 redirected; terminals get a text report. Skipped files and directories are
 named with the reason they were skipped.
 

@@ -128,11 +128,12 @@ type expressionRecord struct {
 }
 
 type fileRecord struct {
-	Path       string            `json:"path"`
-	Size       int64             `json:"size"`
-	Encoding   string            `json:"encoding"`
-	Detections []detectionRecord `json:"detections"`
-	Clues      []matchRecord     `json:"clues"`
+	Path                string            `json:"path"`
+	Size                int64             `json:"size"`
+	Encoding            string            `json:"encoding"`
+	LicenseTextCoverage float64           `json:"license_text_coverage"`
+	Detections          []detectionRecord `json:"detections"`
+	Clues               []matchRecord     `json:"clues"`
 }
 
 type detectionRecord struct {
@@ -170,14 +171,15 @@ type fileTask struct {
 }
 
 type fileOutcome struct {
-	task     fileTask
-	result   licenses.Result
-	bytes    int64
-	scanned  bool
-	binary   bool
-	tooLarge bool
-	encoding string
-	err      error
+	task                fileTask
+	result              licenses.Result
+	bytes               int64
+	scanned             bool
+	binary              bool
+	tooLarge            bool
+	encoding            string
+	licenseTextCoverage float64
+	err                 error
 }
 
 type decodedText struct {
@@ -270,6 +272,7 @@ func scanRepository(
 				outcome.task.display,
 				outcome.bytes,
 				outcome.encoding,
+				outcome.licenseTextCoverage,
 				outcome.result,
 			)
 			sortFileMatches(&file)
@@ -613,13 +616,15 @@ func scanFile(
 		}
 	}
 	applyScanPolicy(task.policyPath, decoded.data, &result)
+	licenseTextCoverage := calculateLicenseTextCoverage(result, len(decoded.data))
 	remapResultOffsets(&result, decoded)
 	return fileOutcome{
-		task:     task,
-		result:   result,
-		bytes:    int64(len(data)),
-		scanned:  true,
-		encoding: decoded.encoding,
+		task:                task,
+		result:              result,
+		bytes:               int64(len(data)),
+		scanned:             true,
+		encoding:            decoded.encoding,
+		licenseTextCoverage: licenseTextCoverage,
 	}
 }
 
@@ -786,9 +791,15 @@ func makeFileRecord(
 	path string,
 	size int64,
 	encoding string,
+	licenseTextCoverage float64,
 	result licenses.Result,
 ) fileRecord {
-	file := fileRecord{Path: path, Size: size, Encoding: encoding}
+	file := fileRecord{
+		Path:                path,
+		Size:                size,
+		Encoding:            encoding,
+		LicenseTextCoverage: licenseTextCoverage,
+	}
 	file.Detections = make([]detectionRecord, 0, len(result.Detections))
 	for _, detection := range result.Detections {
 		record := detectionRecord{
@@ -806,6 +817,60 @@ func makeFileRecord(
 		file.Clues = append(file.Clues, makeMatchRecord(clue))
 	}
 	return file
+}
+
+type byteRange struct {
+	start int
+	end   int
+}
+
+func calculateLicenseTextCoverage(result licenses.Result, inputLength int) float64 {
+	if inputLength == 0 {
+		return 0
+	}
+
+	ranges := make([]byteRange, 0)
+	addMatch := func(match licenses.Match) {
+		if match.Kind != licenses.KindText && match.Kind != licenses.KindNotice {
+			return
+		}
+		start := max(0, min(match.Start, inputLength))
+		end := max(0, min(match.End, inputLength))
+		if start >= end {
+			return
+		}
+		ranges = append(ranges, byteRange{start: start, end: end})
+	}
+	for _, detection := range result.Detections {
+		for _, match := range detection.Matches {
+			addMatch(match)
+		}
+	}
+	for _, clue := range result.Clues {
+		addMatch(clue)
+	}
+	if len(ranges) == 0 {
+		return 0
+	}
+
+	slices.SortFunc(ranges, func(first, second byteRange) int {
+		if compared := cmp.Compare(first.start, second.start); compared != 0 {
+			return compared
+		}
+		return cmp.Compare(first.end, second.end)
+	})
+	covered := 0
+	current := ranges[0]
+	for _, next := range ranges[1:] {
+		if next.start <= current.end {
+			current.end = max(current.end, next.end)
+			continue
+		}
+		covered += current.end - current.start
+		current = next
+	}
+	covered += current.end - current.start
+	return float64(covered) / float64(inputLength) * 100
 }
 
 func makeMatchRecord(match licenses.Match) matchRecord {

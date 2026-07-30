@@ -379,6 +379,14 @@ func TestScanRepositoryDecodesLicenseText(t *testing.T) {
 			if match.Matched != string(plainMatch.Matched) {
 				t.Errorf("matched text differs from decoded UTF-8 reference")
 			}
+			wantCoverage := calculateLicenseTextCoverage(plainResult, len(plain))
+			if file.LicenseTextCoverage != wantCoverage {
+				t.Errorf(
+					"license text coverage = %v, want %v",
+					file.LicenseTextCoverage,
+					wantCoverage,
+				)
+			}
 		})
 	}
 }
@@ -414,6 +422,39 @@ func TestScanRepositoryFallsBackToLatin1ForMalformedUTF16(t *testing.T) {
 	}
 	if !hasMITExpression(report.Files[0]) {
 		t.Errorf("detections = %#v, want MIT", report.Files[0].Detections)
+	}
+}
+
+func TestCalculateLicenseTextCoverage(t *testing.T) {
+	t.Parallel()
+
+	result := licenses.Result{
+		Detections: []licenses.Detection{
+			{
+				Matches: []licenses.Match{
+					{Kind: licenses.KindText, Start: 5, End: 40},
+					{Kind: licenses.KindNotice, Start: 30, End: 55},
+					{Kind: licenses.KindReference, Start: 55, End: 100},
+					{Kind: licenses.KindText, Start: -10, End: 10},
+					{Kind: licenses.KindText, Start: 90, End: 120},
+					{Kind: licenses.KindText, Start: 80, End: 70},
+				},
+			},
+		},
+		Clues: []licenses.Match{
+			{Kind: licenses.KindNotice, Start: 70, End: 80},
+			{Kind: licenses.KindClue, Start: 55, End: 70},
+		},
+	}
+
+	if got := calculateLicenseTextCoverage(result, 100); got != 75 {
+		t.Errorf("coverage = %v, want 75", got)
+	}
+	if got := calculateLicenseTextCoverage(result, 0); got != 0 {
+		t.Errorf("empty input coverage = %v, want 0", got)
+	}
+	if got := calculateLicenseTextCoverage(licenses.Result{}, 100); got != 0 {
+		t.Errorf("unmatched input coverage = %v, want 0", got)
 	}
 }
 
