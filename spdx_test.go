@@ -27,11 +27,11 @@ func TestMatcherSPDXTags(t *testing.T) {
 			end:        28,
 		},
 		{
-			name:       "aliased id",
-			input:      "SPDX-License-Identifier: BSD-3-Clause",
-			expression: "bsd-new",
+			name:       "isc",
+			input:      "SPDX-License-Identifier: ISC",
+			expression: "isc",
 			start:      0,
-			end:        37,
+			end:        28,
 		},
 		{
 			name:       "line comment",
@@ -76,32 +76,11 @@ func TestMatcherSPDXTags(t *testing.T) {
 			end:        27,
 		},
 		{
-			name:       "compound",
-			input:      "SPDX-License-Identifier: MIT OR Apache-2.0",
-			expression: "mit OR apache-2.0",
+			name:       "compound without rule",
+			input:      "SPDX-License-Identifier: MIT OR ISC",
+			expression: "mit OR isc",
 			start:      0,
-			end:        42,
-		},
-		{
-			name:       "parenthesised",
-			input:      "SPDX-License-Identifier: (MIT OR BSD-3-Clause)",
-			expression: "(mit OR bsd-new)",
-			start:      0,
-			end:        46,
-		},
-		{
-			name:       "with exception",
-			input:      "SPDX-License-Identifier: GPL-2.0-only WITH Classpath-exception-2.0",
-			expression: "gpl-2.0 WITH classpath-exception-2.0",
-			start:      0,
-			end:        66,
-		},
-		{
-			name:       "scancode license ref",
-			input:      "SPDX-License-Identifier: LicenseRef-scancode-bsd-new",
-			expression: "bsd-new",
-			start:      0,
-			end:        52,
+			end:        35,
 		},
 		{
 			name:       "unknown license ref",
@@ -153,6 +132,59 @@ func TestMatcherSPDXTags(t *testing.T) {
 	}
 }
 
+func TestMatcherSPDXTagsDroppedForOverlappingRuleMatch(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		input      string
+		expression string
+	}{
+		{
+			name:       "aliased id",
+			input:      "SPDX-License-Identifier: BSD-3-Clause",
+			expression: "bsd-new",
+		},
+		{
+			name:       "compound rule",
+			input:      "SPDX-License-Identifier: MIT OR Apache-2.0",
+			expression: "mit OR apache-2.0",
+		},
+		{
+			name:       "deprecated compound remap",
+			input:      "/* SPDX-License-Identifier: eCos-2.0 */",
+			expression: "gpl-2.0-plus WITH ecos-exception-2.0",
+		},
+	}
+	matcher := testSPDXMatcher(t)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			result, err := matcher.Match(context.Background(), []byte(test.input))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var found bool
+			for _, detection := range result.Detections {
+				for _, match := range detection.Matches {
+					if match.Method == SpdxID {
+						t.Errorf("spdx-id match survived overlap: %#v", match)
+					}
+				}
+				if detection.Expression == test.expression {
+					found = true
+				}
+			}
+			if !found {
+				t.Errorf(
+					"expression %q not detected: %#v",
+					test.expression,
+					result.Detections,
+				)
+			}
+		})
+	}
+}
+
 func TestMatcherSPDXTagsNoMatch(t *testing.T) {
 	t.Parallel()
 
@@ -186,7 +218,7 @@ func TestMatcherSPDXTagsMultiple(t *testing.T) {
 	t.Parallel()
 
 	input := "// SPDX-License-Identifier: MIT\n" +
-		"// SPDX-License-Identifier: BSD-3-Clause\n"
+		"// SPDX-License-Identifier: ISC\n"
 	matcher := testSPDXMatcher(t)
 	result, err := matcher.Match(context.Background(), []byte(input))
 	if err != nil {
@@ -200,8 +232,43 @@ func TestMatcherSPDXTagsMultiple(t *testing.T) {
 			}
 		}
 	}
-	if !got["mit"] || !got["bsd-new"] || len(got) != 2 {
-		t.Fatalf("expressions = %v, want mit and bsd-new", got)
+	if !got["mit"] || !got["isc"] || len(got) != 2 {
+		t.Fatalf("expressions = %v, want mit and isc", got)
+	}
+}
+
+func TestResultOverlapsSpan(t *testing.T) {
+	t.Parallel()
+
+	result := &Result{
+		Detections: []Detection{
+			{Matches: []Match{{Start: 10, End: 20}}},
+		},
+		Clues: []Match{{Start: 30, End: 40}},
+	}
+	tests := []struct {
+		start, end int
+		want       bool
+	}{
+		{start: 0, end: 5, want: false},
+		{start: 5, end: 10, want: false},
+		{start: 5, end: 11, want: true},
+		{start: 12, end: 18, want: true},
+		{start: 19, end: 25, want: true},
+		{start: 20, end: 25, want: false},
+		{start: 35, end: 45, want: true},
+		{start: 40, end: 50, want: false},
+	}
+	for _, test := range tests {
+		if got := resultOverlapsSpan(result, test.start, test.end); got != test.want {
+			t.Errorf(
+				"resultOverlapsSpan([%d,%d)) = %v, want %v",
+				test.start,
+				test.end,
+				got,
+				test.want,
+			)
+		}
 	}
 }
 

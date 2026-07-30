@@ -66,7 +66,9 @@ func (index spdxIndex) resolve(identifier string) string {
 
 // matchSPDXTags scans input for SPDX-License-Identifier tags and appends a
 // tag-kind match per resolved expression. The scan is a single pass anchored
-// on 's' bytes with a case-insensitive prefix check.
+// on 's' bytes with a case-insensitive prefix check. Tags whose span sits
+// within an existing rule match are dropped so a partial tag inside a larger
+// notice does not add a second, narrower expression.
 func (m *Matcher) matchSPDXTags(input []byte, result *Result) {
 	for offset := 0; offset < len(input); {
 		anchor := indexSPDXAnchor(input, offset)
@@ -81,6 +83,9 @@ func (m *Matcher) matchSPDXTags(input []byte, result *Result) {
 		expressionStart, expressionEnd := spdxExpressionSpan(input, tagEnd)
 		offset = max(expressionEnd, tagEnd)
 		if expressionStart >= expressionEnd {
+			continue
+		}
+		if resultOverlapsSpan(result, anchor, expressionEnd) {
 			continue
 		}
 		expression, identifiers := m.engine.spdx.normalizeExpression(
@@ -104,6 +109,27 @@ func (m *Matcher) matchSPDXTags(input []byte, result *Result) {
 		}
 		addDetection(result, expression, identificationForIDs(identifiers), match)
 	}
+}
+
+// resultOverlapsSpan reports whether any existing detection or clue match
+// overlaps [start, end). An SPDX tag whose expression bytes are already
+// covered by a corpus rule match is redundant: the rule carries richer
+// context (compound expressions, deprecated-id remapping) than the tag
+// resolver.
+func resultOverlapsSpan(result *Result, start, end int) bool {
+	for _, detection := range result.Detections {
+		for _, match := range detection.Matches {
+			if match.Start < end && start < match.End {
+				return true
+			}
+		}
+	}
+	for _, match := range result.Clues {
+		if match.Start < end && start < match.End {
+			return true
+		}
+	}
+	return false
 }
 
 // indexSPDXAnchor returns the next offset at which the four bytes SPDX begin,

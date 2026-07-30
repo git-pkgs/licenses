@@ -248,8 +248,8 @@ func (m *Matcher) match(ctx context.Context, b []byte, filters exactFilterOption
 
 	tokens := m.engine.vocabulary.Tokenize(b)
 	result := Result{Corpus: m.engine.info}
-	m.matchSPDXTags(b, &result)
 	if len(tokens.IDs) == 0 {
+		m.matchSPDXTags(b, &result)
 		sortResult(&result)
 		return result, nil
 	}
@@ -273,6 +273,7 @@ func (m *Matcher) match(ctx context.Context, b []byte, filters exactFilterOption
 			m.makeMatch(b, rule, metadata, candidate.method, start, end),
 		)
 	}
+	m.matchSPDXTags(b, &result)
 	sortResult(&result)
 	return result, nil
 }
