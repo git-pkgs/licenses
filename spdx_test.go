@@ -90,11 +90,11 @@ func TestMatcherSPDXTags(t *testing.T) {
 			end:        47,
 		},
 		{
-			name:       "unknown id",
-			input:      "SPDX-License-Identifier: NoSuchLicense-1.0",
-			expression: "unknown-spdx",
+			name:       "scancode license ref",
+			input:      "SPDX-License-Identifier: LicenseRef-scancode-bsd-new",
+			expression: "bsd-new",
 			start:      0,
-			end:        42,
+			end:        52,
 		},
 	}
 	matcher := testSPDXMatcher(t)
@@ -195,6 +195,11 @@ func TestMatcherSPDXTagsNoMatch(t *testing.T) {
 		"SPDX-License-Identifier: \n",
 		"SPDX License Identifier: MIT",
 		"SPDX-License-Identifier MIT",
+		"SPDX-License-Identifier: NoSuchLicense-1.0",
+		"SPDX-License-Identifier: MIT AND",
+		"SPDX-License-Identifier: (MIT OR ISC",
+		"SPDX-License-Identifier: NONE",
+		"SPDX-License-Identifier: NOASSERTION",
 		"SPDX something else",
 		strings.Repeat("s", 4096),
 	}
@@ -344,9 +349,12 @@ func TestSPDXNormalizeExpression(t *testing.T) {
 	t.Parallel()
 
 	index := spdxIndex{keys: map[string]string{
-		"mit":          "mit",
-		"apache-2.0":   "apache-2.0",
-		"bsd-3-clause": "bsd-new",
+		"mit":                     "mit",
+		"apache-2.0":              "apache-2.0",
+		"bsd-3-clause":            "bsd-new",
+		"gpl-2.0":                 "gpl-2.0",
+		"gpl-2.0+":                "gpl-2.0-plus",
+		"classpath-exception-2.0": "classpath-exception-2.0",
 	}}
 	tests := []struct {
 		input      string
@@ -361,7 +369,7 @@ func TestSPDXNormalizeExpression(t *testing.T) {
 		},
 		{
 			input:      "( MIT  OR  BSD-3-Clause )",
-			expression: "(mit OR bsd-new)",
+			expression: "mit OR bsd-new",
 			ids:        []string{"mit", "bsd-new"},
 		},
 		{
@@ -370,13 +378,25 @@ func TestSPDXNormalizeExpression(t *testing.T) {
 			ids:        []string{"mit"},
 		},
 		{
-			input:      "unrecognised",
-			expression: "unknown-spdx",
-			ids:        []string{"unknown-spdx"},
+			input:      "GPL-2.0+ WITH Classpath-exception-2.0",
+			expression: "gpl-2.0-plus WITH classpath-exception-2.0",
+			ids:        []string{"gpl-2.0-plus", "classpath-exception-2.0"},
 		},
+		{
+			input:      "MIT OR Apache-2.0 AND GPL-2.0+",
+			expression: "mit OR (apache-2.0 AND gpl-2.0-plus)",
+			ids:        []string{"mit", "apache-2.0", "gpl-2.0-plus"},
+		},
+		{input: "LicenseRef-custom", expression: "unknown-spdx", ids: []string{"unknown-spdx"}},
+		{input: "DocumentRef-vendor:LicenseRef-custom", expression: "unknown-spdx", ids: []string{"unknown-spdx"}},
 		{input: "", expression: ""},
+		{input: "unrecognised", expression: ""},
 		{input: "AND OR", expression: ""},
+		{input: "MIT AND", expression: ""},
+		{input: "(MIT OR Apache-2.0", expression: ""},
 		{input: "MIT;", expression: ""},
+		{input: "NONE", expression: ""},
+		{input: "NOASSERTION", expression: ""},
 	}
 	for _, test := range tests {
 		expression, ids := index.normalizeExpression([]byte(test.input))
@@ -459,6 +479,7 @@ func TestEmbeddedCorpusResolvesCommonSPDXIdentifiers(t *testing.T) {
 		"Apache-2.0":       "apache-2.0",
 		"GPL-2.0-only":     "gpl-2.0",
 		"GPL-2.0-or-later": "gpl-2.0-plus",
+		"GPL-2.0+":         "gpl-2.0-plus",
 		"LGPL-2.1":         "lgpl-2.1",
 		"MPL-2.0":          "mpl-2.0",
 	}

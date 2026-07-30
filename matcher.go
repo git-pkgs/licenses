@@ -22,7 +22,7 @@ const (
 	Hash Method = "hash"
 	// Exact is an exact token-sequence match within a larger input.
 	Exact Method = "exact"
-	// SpdxID is an SPDX-License-Identifier tag match.
+	// SpdxID is a strictly parsed SPDX-License-Identifier tag match.
 	SpdxID Method = "spdx-id"
 )
 

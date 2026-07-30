@@ -11,8 +11,10 @@ import (
 )
 
 var (
-	benchmarkMatcher *Matcher
-	benchmarkResult  Result
+	benchmarkMatcher        *Matcher
+	benchmarkResult         Result
+	benchmarkSPDXExpression string
+	benchmarkSPDXIDs        []string
 )
 
 func BenchmarkMatcherColdStart(b *testing.B) {
@@ -97,6 +99,37 @@ func BenchmarkMatchCorpusHash(b *testing.B) {
 			}
 			benchmarkResult = result
 		}
+	}
+}
+
+func BenchmarkMatchSPDXTag(b *testing.B) {
+	matcher, err := New()
+	if err != nil {
+		b.Fatal(err)
+	}
+	input := []byte(
+		"// SPDX-License-Identifier: MIT OR ISC AND LicenseRef-scancode-bsd-new\n",
+	)
+	b.SetBytes(int64(len(input)))
+	b.ResetTimer()
+	for b.Loop() {
+		benchmarkResult, err = matcher.Match(context.Background(), input)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkNormalizeSPDXExpression(b *testing.B) {
+	matcher, err := New()
+	if err != nil {
+		b.Fatal(err)
+	}
+	input := []byte("MIT OR ISC AND LicenseRef-scancode-bsd-new")
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		benchmarkSPDXExpression, benchmarkSPDXIDs = matcher.engine.spdx.normalizeExpression(input)
 	}
 }
 

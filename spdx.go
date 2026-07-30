@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/git-pkgs/licenses/internal/corpus"
+	"github.com/git-pkgs/spdx"
 )
 
 const (
@@ -209,63 +210,43 @@ func spdxExpressionSpan(input []byte, from int) (int, int) {
 // normalizeExpression parses raw SPDX expression bytes and returns the
 // expression rewritten with ScanCode keys plus its distinct identifiers.
 func (index spdxIndex) normalizeExpression(raw []byte) (string, []string) {
-	var expression strings.Builder
-	expression.Grow(len(raw))
-	var identifiers []string
-	var last byte
-	separate := func() {
-		if last != 0 && last != '(' {
-			expression.WriteByte(' ')
-		}
+	expression, err := spdx.ParseStrict(string(raw))
+	if err != nil {
+		return "", nil
 	}
+	foldSPDXPlusModifiers(expression)
 
-	for offset := 0; offset < len(raw); {
-		character := raw[offset]
-		switch {
-		case character == ' ' || character == '\t':
-			offset++
-		case character == '(':
-			separate()
-			expression.WriteByte(character)
-			last = character
-			offset++
-		case character == ')':
-			expression.WriteByte(character)
-			last = character
-			offset++
-		case isSPDXTokenByte(character):
-			start := offset
-			for offset < len(raw) && isSPDXTokenByte(raw[offset]) {
-				offset++
-			}
-			token := string(raw[start:offset])
-			separate()
-			switch strings.ToUpper(token) {
-			case "AND", "OR", "WITH":
-				expression.WriteString(strings.ToUpper(token))
-			default:
-				key := index.resolve(token)
-				expression.WriteString(key)
-				if !slices.Contains(identifiers, key) {
-					identifiers = append(identifiers, key)
-				}
-			}
-			last = character
-		default:
-			return "", nil
+	var identifiers []string
+	rewritten := spdx.RewriteIdentifiers(expression, func(identifier string) string {
+		key := index.resolve(identifier)
+		if !slices.Contains(identifiers, key) {
+			identifiers = append(identifiers, key)
 		}
-	}
+		return key
+	})
 	if len(identifiers) == 0 {
 		return "", nil
 	}
-	return expression.String(), identifiers
+	return rewritten, identifiers
 }
 
-func isSPDXTokenByte(character byte) bool {
-	return character >= 'a' && character <= 'z' ||
-		character >= 'A' && character <= 'Z' ||
-		character >= '0' && character <= '9' ||
-		character == '-' || character == '.' || character == '+'
+// foldSPDXPlusModifiers lets the corpus resolve deprecated SPDX aliases such
+// as GPL-2.0+ as a whole. RewriteIdentifiers otherwise preserves + as syntax
+// and presents GPL-2.0 alone to the callback.
+func foldSPDXPlusModifiers(expression spdx.Expression) {
+	switch node := expression.(type) {
+	case *spdx.License:
+		if node.Plus {
+			node.ID += "+"
+			node.Plus = false
+		}
+	case *spdx.AndExpression:
+		foldSPDXPlusModifiers(node.Left)
+		foldSPDXPlusModifiers(node.Right)
+	case *spdx.OrExpression:
+		foldSPDXPlusModifiers(node.Left)
+		foldSPDXPlusModifiers(node.Right)
+	}
 }
 
 func equalFoldASCII(input []byte, lower string) bool {
