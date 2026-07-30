@@ -95,6 +95,49 @@ func TestScanRepository(t *testing.T) {
 	}
 }
 
+func TestIdentificationRecordsAndSummary(t *testing.T) {
+	t.Parallel()
+
+	file := fileRecord{Detections: []detectionRecord{
+		{
+			Expression:     "mit",
+			Identification: licenses.Identified,
+			Matches:        []matchRecord{{RuleID: "mit.RULE"}},
+		},
+		{
+			Expression:     "mit AND free-unknown",
+			Identification: licenses.Partial,
+			Matches:        []matchRecord{{RuleID: "partial.RULE"}},
+		},
+		{
+			Expression:     "unknown-license-reference",
+			Identification: licenses.NoAssertion,
+			Matches:        []matchRecord{{RuleID: "unknown.RULE"}},
+		},
+	}}
+	var summary scanSummary
+	addIdentificationSummary(&summary, file.Detections)
+	if summary.FilesWithIdentifiedDetections != 1 ||
+		summary.FilesWithPartialDetections != 1 ||
+		summary.FilesWithNoAssertionDetections != 1 {
+		t.Errorf("summary = %#v, want one file in each state", summary)
+	}
+
+	expressions := make(map[string]*expressionRecord)
+	addExpressionRecords(expressions, file)
+	for _, detection := range file.Detections {
+		record := expressions[detection.Expression]
+		if record == nil || record.Identification != detection.Identification {
+			t.Errorf(
+				"expression %q = %#v, want %q",
+				detection.Expression,
+				record,
+				detection.Identification,
+			)
+		}
+	}
+}
+
 func TestScanRepositoryFollowsExplicitRootSymlinks(t *testing.T) {
 	t.Parallel()
 

@@ -34,6 +34,13 @@ func TestMatcherWholeTextHash(t *testing.T) {
 	if detection.Expression != "AGPL-3.0 OR MIT" {
 		t.Fatalf("expression = %q", detection.Expression)
 	}
+	if detection.Identification != Identified {
+		t.Fatalf(
+			"identification = %q, want %q",
+			detection.Identification,
+			Identified,
+		)
+	}
 	if len(detection.Matches) != 1 {
 		t.Fatalf("matches = %#v", detection.Matches)
 	}
@@ -120,6 +127,158 @@ func TestRuleKind(t *testing.T) {
 		if got := ruleKind(test.flags); got != test.want {
 			t.Errorf("ruleKind(%d) = %q, want %q", test.flags, got, test.want)
 		}
+	}
+}
+
+func TestIdentificationForExpressionIDs(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		expression string
+		want       Identification
+	}{
+		{want: NoAssertion},
+		{expression: "MIT", want: Identified},
+		{
+			expression: "GPL-2.0-only WITH Classpath-exception-2.0",
+			want:       Identified,
+		},
+		{expression: "unknown-license-reference", want: NoAssertion},
+		{expression: "free-unknown OR unknown", want: NoAssertion},
+		{expression: "unknown-spdx OR see-license", want: NoAssertion},
+		{expression: "other-permissive", want: NoAssertion},
+		{expression: "other-copyleft", want: NoAssertion},
+		{expression: "warranty-disclaimer", want: NoAssertion},
+		{expression: "generic-cla", want: NoAssertion},
+		{expression: "generic-amiwm", want: Identified},
+		{expression: "patent-disclaimer", want: Identified},
+		{expression: "proprietary-license", want: Identified},
+		{expression: "commercial-license", want: Identified},
+		{expression: "MIT AND free-unknown", want: Partial},
+		{expression: "MIT AND other-permissive", want: Partial},
+	}
+	for _, test := range tests {
+		identifiers := expressionIDs(test.expression)
+		if got := identificationForIDs(identifiers); got != test.want {
+			t.Errorf(
+				"identificationForIDs(expressionIDs(%q)) = %q, want %q",
+				test.expression,
+				got,
+				test.want,
+			)
+		}
+	}
+}
+
+func TestEmbeddedCorpusPlaceholderIdentifiersAreClassified(t *testing.T) {
+	matcher, err := New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"free-unknown",
+		"generic-cla",
+		"generic-exception",
+		"generic-export-compliance",
+		"generic-tos",
+		"generic-trademark",
+		"other-copyleft",
+		"other-permissive",
+		"public-domain-disclaimer",
+		"see-license",
+		"unknown",
+		"unknown-license-reference",
+		"unknown-spdx",
+		"warranty-disclaimer",
+	}
+	observed := make(map[string]bool)
+	var unclassified []string
+	for _, rule := range matcher.engine.rules {
+		for _, identifier := range expressionIDs(rule.Expression) {
+			if isPlaceholderIdentifier(identifier) {
+				observed[identifier] = true
+				continue
+			}
+			if potentialPlaceholderIdentifier(identifier) &&
+				!slices.Contains(unclassified, identifier) {
+				unclassified = append(unclassified, identifier)
+			}
+		}
+	}
+	slices.Sort(unclassified)
+	if len(unclassified) != 0 {
+		t.Errorf("unclassified placeholder-like identifiers: %v", unclassified)
+	}
+	got := make([]string, 0, len(observed))
+	for identifier := range observed {
+		got = append(got, identifier)
+	}
+	slices.Sort(got)
+	if !slices.Equal(got, want) {
+		t.Errorf("placeholder identifiers = %v, want %v", got, want)
+	}
+}
+
+func potentialPlaceholderIdentifier(identifier string) bool {
+	return identifier == "free-unknown" ||
+		identifier == "see-license" ||
+		strings.HasPrefix(identifier, "unknown") ||
+		strings.HasPrefix(identifier, "other-") ||
+		identifier == "generic-cla" ||
+		identifier == "generic-exception" ||
+		identifier == "generic-export-compliance" ||
+		identifier == "generic-tos" ||
+		identifier == "generic-trademark" ||
+		identifier == "public-domain-disclaimer" ||
+		identifier == "warranty-disclaimer"
+}
+
+func TestAddMatchDerivesIdentificationFromExpressionIDs(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		expression string
+		want       Identification
+	}{
+		{expression: "MIT", want: Identified},
+		{expression: "MIT AND free-unknown", want: Partial},
+		{expression: "unknown-license-reference", want: NoAssertion},
+	}
+	for _, test := range tests {
+		var result Result
+		rule := corpus.Rule{Expression: test.expression}
+		match := Match{LicenseIDs: expressionIDs(test.expression)}
+		addMatch(&result, rule, identificationForIDs(match.LicenseIDs), match)
+		if len(result.Detections) != 1 {
+			t.Fatalf("detections for %q = %#v", test.expression, result.Detections)
+		}
+		if got := result.Detections[0].Identification; got != test.want {
+			t.Errorf(
+				"identification for %q = %q, want %q",
+				test.expression,
+				got,
+				test.want,
+			)
+		}
+	}
+}
+
+func TestMatcherReturnsIndependentLicenseIDSlices(t *testing.T) {
+	t.Parallel()
+
+	matcher := testMatcher(t, false)
+	first, err := matcher.Match(context.Background(), []byte("alpha beta"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	first.Detections[0].Matches[0].LicenseIDs[0] = "changed"
+
+	second, err := matcher.Match(context.Background(), []byte("alpha beta"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := second.Detections[0].Matches[0].LicenseIDs[0]; got != "AGPL-3.0" {
+		t.Fatalf("license ID = %q, want AGPL-3.0", got)
 	}
 }
 

@@ -99,23 +99,27 @@ type corpusRecord struct {
 }
 
 type scanSummary struct {
-	FilesVisited        int   `json:"files_visited"`
-	FilesScanned        int   `json:"files_scanned"`
-	FilesWithDetections int   `json:"files_with_detections"`
-	FilesWithClues      int   `json:"files_with_clues"`
-	BytesScanned        int64 `json:"bytes_scanned"`
-	DirectoriesSkipped  int   `json:"directories_skipped"`
-	FilesSkippedBinary  int   `json:"files_skipped_binary"`
-	FilesSkippedSize    int   `json:"files_skipped_size"`
-	FilesSkippedOther   int   `json:"files_skipped_other"`
-	ErrorCount          int   `json:"error_count"`
-	Truncated           bool  `json:"truncated"`
+	FilesVisited                   int   `json:"files_visited"`
+	FilesScanned                   int   `json:"files_scanned"`
+	FilesWithDetections            int   `json:"files_with_detections"`
+	FilesWithIdentifiedDetections  int   `json:"files_with_identified_detections"`
+	FilesWithPartialDetections     int   `json:"files_with_partial_detections"`
+	FilesWithNoAssertionDetections int   `json:"files_with_noassertion_detections"`
+	FilesWithClues                 int   `json:"files_with_clues"`
+	BytesScanned                   int64 `json:"bytes_scanned"`
+	DirectoriesSkipped             int   `json:"directories_skipped"`
+	FilesSkippedBinary             int   `json:"files_skipped_binary"`
+	FilesSkippedSize               int   `json:"files_skipped_size"`
+	FilesSkippedOther              int   `json:"files_skipped_other"`
+	ErrorCount                     int   `json:"error_count"`
+	Truncated                      bool  `json:"truncated"`
 }
 
 type expressionRecord struct {
-	Expression string `json:"expression"`
-	Files      int    `json:"files"`
-	Matches    int    `json:"matches"`
+	Expression     string                  `json:"expression"`
+	Identification licenses.Identification `json:"identification"`
+	Files          int                     `json:"files"`
+	Matches        int                     `json:"matches"`
 }
 
 type fileRecord struct {
@@ -127,8 +131,9 @@ type fileRecord struct {
 }
 
 type detectionRecord struct {
-	Expression string        `json:"expression"`
-	Matches    []matchRecord `json:"matches"`
+	Expression     string                  `json:"expression"`
+	Identification licenses.Identification `json:"identification"`
+	Matches        []matchRecord           `json:"matches"`
 }
 
 type matchRecord struct {
@@ -265,6 +270,7 @@ func scanRepository(
 			sortFileMatches(&file)
 			if len(file.Detections) != 0 {
 				report.Summary.FilesWithDetections++
+				addIdentificationSummary(&report.Summary, file.Detections)
 			}
 			if len(file.Clues) != 0 {
 				report.Summary.FilesWithClues++
@@ -785,8 +791,9 @@ func makeFileRecord(
 	file.Detections = make([]detectionRecord, 0, len(result.Detections))
 	for _, detection := range result.Detections {
 		record := detectionRecord{
-			Expression: detection.Expression,
-			Matches:    make([]matchRecord, 0, len(detection.Matches)),
+			Expression:     detection.Expression,
+			Identification: detection.Identification,
+			Matches:        make([]matchRecord, 0, len(detection.Matches)),
 		}
 		for _, match := range detection.Matches {
 			record.Matches = append(record.Matches, makeMatchRecord(match))
@@ -1021,11 +1028,40 @@ func addExpressionRecords(expressions map[string]*expressionRecord, file fileRec
 	for _, detection := range file.Detections {
 		record := expressions[detection.Expression]
 		if record == nil {
-			record = &expressionRecord{Expression: detection.Expression}
+			record = &expressionRecord{
+				Expression:     detection.Expression,
+				Identification: detection.Identification,
+			}
 			expressions[detection.Expression] = record
 		}
 		record.Files++
 		record.Matches += len(detection.Matches)
+	}
+}
+
+func addIdentificationSummary(
+	summary *scanSummary,
+	detections []detectionRecord,
+) {
+	var identified, partial, noAssertion bool
+	for _, detection := range detections {
+		switch detection.Identification {
+		case licenses.Identified:
+			identified = true
+		case licenses.Partial:
+			partial = true
+		case licenses.NoAssertion:
+			noAssertion = true
+		}
+	}
+	if identified {
+		summary.FilesWithIdentifiedDetections++
+	}
+	if partial {
+		summary.FilesWithPartialDetections++
+	}
+	if noAssertion {
+		summary.FilesWithNoAssertionDetections++
 	}
 }
 

@@ -324,13 +324,23 @@ func splitExactMatches(
 	matches []exactMatch,
 	keep []bool,
 ) ([]exactMatch, []exactMatch) {
-	kept := make([]exactMatch, 0, len(matches))
-	discarded := make([]exactMatch, 0, len(matches))
+	keptCount := 0
+	for _, retained := range keep {
+		if retained {
+			keptCount++
+		}
+	}
+	partitioned := make([]exactMatch, len(matches))
+	kept := partitioned[:keptCount:keptCount]
+	discarded := partitioned[keptCount:]
+	keptIndex, discardedIndex := 0, 0
 	for index, match := range matches {
 		if keep[index] {
-			kept = append(kept, match)
+			kept[keptIndex] = match
+			keptIndex++
 		} else {
-			discarded = append(discarded, match)
+			discarded[discardedIndex] = match
+			discardedIndex++
 		}
 	}
 	return kept, discarded
@@ -350,7 +360,7 @@ func filterFalsePositiveMatches(
 	engine *matchEngine,
 	matches []exactMatch,
 ) ([]exactMatch, error) {
-	kept := make([]exactMatch, 0, len(matches))
+	kept := matches[:0]
 	for index, match := range matches {
 		if err := checkFilterContext(ctx, index); err != nil {
 			return nil, err

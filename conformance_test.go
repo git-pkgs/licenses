@@ -457,8 +457,11 @@ func rawExactExpressions(engine *matchEngine, input []byte) []string {
 	}
 	if ruleIndexes := engine.hashMatches(tokens.IDs); len(ruleIndexes) != 0 {
 		expressions := make([]string, 0, len(ruleIndexes))
-		for _, ruleIndex := range ruleIndexes {
-			expressions = append(expressions, engine.rules[ruleIndex].Expression)
+		for _, match := range ruleIndexes {
+			expressions = append(
+				expressions,
+				engine.rules[match.ruleIndex].Expression,
+			)
 		}
 		return uniqueExpressions(expressions)
 	}

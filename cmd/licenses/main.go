@@ -218,8 +218,9 @@ func writeHumanExpressions(writer io.Writer, expressions []expressionRecord) err
 	for _, expression := range expressions {
 		if _, err := fmt.Fprintf(
 			writer,
-			"  %s: %d files, %d matches\n",
+			"  %s: %s, %d files, %d matches\n",
 			expression.Expression,
+			expression.Identification,
 			expression.Files,
 			expression.Matches,
 		); err != nil {
@@ -235,7 +236,12 @@ func writeHumanFiles(writer io.Writer, files []fileRecord) error {
 			return err
 		}
 		for _, detection := range file.Detections {
-			if _, err := fmt.Fprintf(writer, "  %s\n", detection.Expression); err != nil {
+			if _, err := fmt.Fprintf(
+				writer,
+				"  %s [%s]\n",
+				detection.Expression,
+				detection.Identification,
+			); err != nil {
 				return err
 			}
 			for _, match := range detection.Matches {
@@ -271,11 +277,16 @@ func writeHumanErrors(writer io.Writer, scanErrors []scanErrorRecord) error {
 func writeHumanSummary(writer io.Writer, summary scanSummary) error {
 	_, err := fmt.Fprintf(
 		writer,
-		"\nScanned %d/%d files (%s); %d files detected, %d files with clues, %d errors",
+		"\nScanned %d/%d files (%s); %d files detected; "+
+			"identified in %d, partial in %d, NOASSERTION in %d; "+
+			"%d files with clues, %d errors",
 		summary.FilesScanned,
 		summary.FilesVisited,
 		formatBytes(summary.BytesScanned),
 		summary.FilesWithDetections,
+		summary.FilesWithIdentifiedDetections,
+		summary.FilesWithPartialDetections,
+		summary.FilesWithNoAssertionDetections,
 		summary.FilesWithClues,
 		summary.ErrorCount,
 	)

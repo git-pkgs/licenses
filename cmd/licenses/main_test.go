@@ -43,8 +43,24 @@ func TestRunJSON(t *testing.T) {
 	if report.Summary.FilesScanned != 1 {
 		t.Errorf("files scanned = %d, want 1", report.Summary.FilesScanned)
 	}
+	if report.Summary.FilesWithIdentifiedDetections != 1 ||
+		report.Summary.FilesWithPartialDetections != 0 ||
+		report.Summary.FilesWithNoAssertionDetections != 0 {
+		t.Errorf("identification summary = %#v", report.Summary)
+	}
 	if len(report.Files) != 1 || !hasMITExpression(report.Files[0]) {
 		t.Fatalf("files = %#v, want MIT detection", report.Files)
+	}
+	if report.Files[0].Detections[0].Identification != licenses.Identified {
+		t.Errorf(
+			"detection identification = %q, want %q",
+			report.Files[0].Detections[0].Identification,
+			licenses.Identified,
+		)
+	}
+	if len(report.Expressions) != 1 ||
+		report.Expressions[0].Identification != licenses.Identified {
+		t.Errorf("expressions = %#v, want identified", report.Expressions)
 	}
 	if report.Files[0].Detections[0].Matches[0].Matched == "" {
 		t.Error("matched text is empty")

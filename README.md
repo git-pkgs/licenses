@@ -55,6 +55,15 @@ and accept file records with empty `detections` when `clues` are present. With
 `-matched-text`, `matched` contains decoded UTF-8 rather than the original
 encoded bytes.
 
+Detection and expression records include `identification`. Its value is
+`identified`, `partial`, or SPDX's `NOASSERTION`. Partial expressions contain
+both non-placeholder and ScanCode placeholder identifiers. `NOASSERTION`
+detections confirm license-related text without naming another license
+identifier.
+
+The three per-file summary counts overlap when one file contains detections in
+more than one identification state.
+
 Exit status 0 means detections were found, 1 is a fatal command error, 2 means
 the scan was incomplete because of per-file errors or the file limit, and 3
 means no conclusive detections were found.

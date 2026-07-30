@@ -44,6 +44,22 @@ const (
 	KindClue Kind = "clue"
 )
 
+// Identification states whether a detected expression names concrete
+// licenses.
+type Identification string
+
+const (
+	// Identified means the expression contains no ScanCode placeholder
+	// identifiers.
+	Identified Identification = "identified"
+	// Partial means the expression contains both non-placeholder and ScanCode
+	// placeholder identifiers.
+	Partial Identification = "partial"
+	// NoAssertion uses SPDX's NOASSERTION term when the expression contains
+	// only ScanCode placeholder identifiers.
+	NoAssertion Identification = "NOASSERTION"
+)
+
 // ErrTooManyMatches is returned when an input produces more exact-match
 // candidates than the matcher can safely filter.
 var ErrTooManyMatches = errors.New("licenses: too many exact-match candidates")
@@ -57,8 +73,12 @@ type Result struct {
 
 // Detection groups matches that state the same license expression.
 type Detection struct {
+	// Expression is copied exactly from the ScanCode rule.
 	Expression string
-	Matches    []Match
+	// Identification is derived from the identifiers in Expression.
+	Identification Identification
+	// Matches contains the rule matches that state Expression.
+	Matches []Match
 }
 
 // Match describes one rule match in the input.
@@ -114,11 +134,18 @@ func (m *Matcher) Corpus() CorpusInfo {
 }
 
 type matchEngine struct {
-	info       CorpusInfo
-	vocabulary *tokenize.Vocabulary
-	rules      []corpus.Rule
-	automaton  aho.Automaton
-	hashes     map[uint64][]uint32
+	info                   CorpusInfo
+	vocabulary             *tokenize.Vocabulary
+	rules                  []corpus.Rule
+	ruleExpressionMetadata []uint32
+	expressionMetadata     []expressionMetadata
+	automaton              aho.Automaton
+	hashes                 map[uint64][]uint32
+}
+
+type expressionMetadata struct {
+	licenseIDs     []string
+	identification Identification
 }
 
 var (
@@ -161,7 +188,21 @@ func newMatchEngine(index corpus.Index) (*matchEngine, error) {
 		return nil, err
 	}
 	hashes := make(map[uint64][]uint32, len(index.Rules))
+	metadataIndexes := make(map[string]uint32)
+	ruleMetadata := make([]uint32, len(index.Rules))
+	var metadata []expressionMetadata
 	for ruleIndex, rule := range index.Rules {
+		metadataIndex, exists := metadataIndexes[rule.Expression]
+		if !exists {
+			identifiers := expressionIDs(rule.Expression)
+			metadataIndex = uint32(len(metadata))
+			metadataIndexes[rule.Expression] = metadataIndex
+			metadata = append(metadata, expressionMetadata{
+				licenseIDs:     identifiers,
+				identification: identificationForIDs(identifiers),
+			})
+		}
+		ruleMetadata[ruleIndex] = metadataIndex
 		if len(rule.Tokens) == 0 {
 			continue
 		}
@@ -174,10 +215,12 @@ func newMatchEngine(index corpus.Index) (*matchEngine, error) {
 			RuleCount:    index.Info.RuleCount,
 			SourceCommit: index.Info.SourceCommit,
 		},
-		vocabulary: vocabulary,
-		rules:      index.Rules,
-		automaton:  index.Automaton,
-		hashes:     hashes,
+		vocabulary:             vocabulary,
+		rules:                  index.Rules,
+		ruleExpressionMetadata: ruleMetadata,
+		expressionMetadata:     metadata,
+		automaton:              index.Automaton,
+		hashes:                 hashes,
 	}, nil
 }
 
@@ -214,9 +257,15 @@ func (m *Matcher) match(ctx context.Context, b []byte, filters exactFilterOption
 	}
 	for _, candidate := range candidates {
 		rule := m.engine.rules[candidate.ruleIndex]
+		metadata := m.engine.metadataForRule(candidate.ruleIndex)
 		start := tokens.Offsets[candidate.tokenStart].Start
 		end := tokens.Offsets[candidate.tokenEnd-1].End
-		addMatch(&result, rule, m.makeMatch(b, rule, candidate.method, start, end))
+		addMatch(
+			&result,
+			rule,
+			metadata.identification,
+			m.makeMatch(b, rule, metadata, candidate.method, start, end),
+		)
 	}
 	sortResult(&result)
 	return result, nil
@@ -229,15 +278,7 @@ func (e *matchEngine) collectExactMatches(
 	tokens []tokenize.ID,
 ) ([]exactMatch, error) {
 	if matches := e.hashMatches(tokens); len(matches) != 0 {
-		candidates := make([]exactMatch, 0, len(matches))
-		for _, ruleIndex := range matches {
-			candidates = append(candidates, exactMatch{
-				ruleIndex: ruleIndex,
-				method:    Hash,
-				tokenEnd:  len(tokens),
-			})
-		}
-		return candidates, nil
+		return matches, nil
 	}
 
 	var candidates []exactMatch
@@ -278,15 +319,19 @@ func exactMatchCandidateLimitError() error {
 	)
 }
 
-func (e *matchEngine) hashMatches(tokens []tokenize.ID) []uint32 {
+func (e *matchEngine) hashMatches(tokens []tokenize.ID) []exactMatch {
 	candidates := e.hashes[hashInputTokens(tokens)]
 	if len(candidates) == 0 {
 		return nil
 	}
-	matches := make([]uint32, 0, len(candidates))
+	matches := make([]exactMatch, 0, len(candidates))
 	for _, ruleIndex := range candidates {
 		if equalTokens(tokens, e.rules[ruleIndex].Tokens) {
-			matches = append(matches, ruleIndex)
+			matches = append(matches, exactMatch{
+				ruleIndex: ruleIndex,
+				method:    Hash,
+				tokenEnd:  len(tokens),
+			})
 		}
 	}
 	return matches
@@ -335,10 +380,21 @@ func hashToken(hash uint64, token uint32) uint64 {
 	return hash
 }
 
-func (m *Matcher) makeMatch(input []byte, rule corpus.Rule, method Method, start, end int) Match {
+func (e *matchEngine) metadataForRule(ruleIndex uint32) expressionMetadata {
+	return e.expressionMetadata[e.ruleExpressionMetadata[ruleIndex]]
+}
+
+func (m *Matcher) makeMatch(
+	input []byte,
+	rule corpus.Rule,
+	metadata expressionMetadata,
+	method Method,
+	start int,
+	end int,
+) Match {
 	match := Match{
 		RuleID:     rule.ID,
-		LicenseIDs: expressionIDs(rule.Expression),
+		LicenseIDs: slices.Clone(metadata.licenseIDs),
 		Kind:       ruleKind(rule.Flags),
 		Method:     method,
 		Score:      float64(rule.Relevance),
@@ -378,7 +434,12 @@ func ruleKind(flags uint16) Kind {
 	}
 }
 
-func addMatch(result *Result, rule corpus.Rule, match Match) {
+func addMatch(
+	result *Result,
+	rule corpus.Rule,
+	identification Identification,
+	match Match,
+) {
 	if rule.Flags&corpus.FlagLicenseClue != 0 {
 		result.Clues = append(result.Clues, match)
 		return
@@ -390,9 +451,54 @@ func addMatch(result *Result, rule corpus.Rule, match Match) {
 		}
 	}
 	result.Detections = append(result.Detections, Detection{
-		Expression: rule.Expression,
-		Matches:    []Match{match},
+		Expression:     rule.Expression,
+		Identification: identification,
+		Matches:        []Match{match},
 	})
+}
+
+func identificationForIDs(identifiers []string) Identification {
+	if len(identifiers) == 0 {
+		return NoAssertion
+	}
+	var concrete, placeholder bool
+	for _, identifier := range identifiers {
+		if isPlaceholderIdentifier(identifier) {
+			placeholder = true
+		} else {
+			concrete = true
+		}
+	}
+	switch {
+	case concrete && placeholder:
+		return Partial
+	case placeholder:
+		return NoAssertion
+	default:
+		return Identified
+	}
+}
+
+func isPlaceholderIdentifier(identifier string) bool {
+	switch strings.ToLower(identifier) {
+	case "free-unknown",
+		"generic-cla",
+		"generic-exception",
+		"generic-export-compliance",
+		"generic-tos",
+		"generic-trademark",
+		"other-copyleft",
+		"other-permissive",
+		"public-domain-disclaimer",
+		"see-license",
+		"unknown",
+		"unknown-license-reference",
+		"unknown-spdx",
+		"warranty-disclaimer":
+		return true
+	default:
+		return false
+	}
 }
 
 func expressionIDs(expression string) []string {
