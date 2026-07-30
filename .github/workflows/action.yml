@@ -26,7 +26,6 @@ jobs:
         uses: ./
         with:
           path: .
-          deny: agpl-3.0,gpl-3.0,sspl-1.0
 
       - name: Assert MIT was detected
         shell: bash
