@@ -12,6 +12,34 @@ import (
 	licenses "github.com/git-pkgs/licenses"
 )
 
+func TestRunVersion(t *testing.T) {
+	t.Parallel()
+
+	var stdout, stderr bytes.Buffer
+	exitCode, err := run(
+		context.Background(),
+		[]string{"-version"},
+		&stdout,
+		&stderr,
+		false,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if exitCode != exitSuccess {
+		t.Fatalf("exit code = %d, want %d", exitCode, exitSuccess)
+	}
+	output := stdout.String()
+	if !strings.HasPrefix(output, "licenses ") ||
+		!strings.Contains(output, "ScanCode") ||
+		!strings.Contains(output, "rules") {
+		t.Fatalf("version output = %q", output)
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr = %q", stderr.String())
+	}
+}
+
 func TestRunJSON(t *testing.T) {
 	t.Parallel()
 

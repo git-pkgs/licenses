@@ -7,7 +7,13 @@ or Python.
 
 ## Install
 
-Install the repository scanner:
+Install the repository scanner with Homebrew:
+
+```bash
+brew install git-pkgs/git-pkgs/licenses
+```
+
+Or with Go:
 
 ```bash
 go install github.com/git-pkgs/licenses/cmd/licenses@latest
@@ -66,10 +72,11 @@ more than one identification state.
 
 Each match reports the method that produced it. `hash` is a whole-file match
 against a rule text, `exact` is a rule token sequence found within the file,
-and `spdx-id` is an `SPDX-License-Identifier` tag line. Tag expressions are
-reported using ScanCode license keys, so `BSD-3-Clause` becomes `bsd-new`.
-Identifiers the corpus does not recognise, including `LicenseRef-*` values,
-become `unknown-spdx` and report `NOASSERTION`. Tag matches use the rule id
+and `spdx-id` is an `SPDX-License-Identifier` tag line whose expression bytes
+are not already covered by a rule match. Tag expressions are reported using
+ScanCode license keys, so `BSD-3-Clause` becomes `bsd-new`. Identifiers the
+corpus does not recognise, including `LicenseRef-*` values, become
+`unknown-spdx` and report `NOASSERTION`. Tag matches use the rule id
 `spdx-license-identifier`.
 
 Exit status 0 means detections were found, 1 is a fatal command error, 2 means

@@ -23,6 +23,9 @@ const (
 	exitNoDetections = 3
 )
 
+// version is set at build time via -ldflags.
+var version = "dev"
+
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	exitCode, err := run(ctx, os.Args[1:], os.Stdout, os.Stderr, isTerminal(os.Stdout))
@@ -78,8 +81,12 @@ func run(
 		"scan scope: project skips dependencies; all includes them; .git is always skipped",
 	)
 	matchedText := flags.Bool("matched-text", false, "include matched text in JSON output")
+	showVersion := flags.Bool("version", false, "print the licenses and corpus versions")
 	if err := flags.Parse(args); err != nil {
 		return exitFatal, err
+	}
+	if *showVersion {
+		return exitSuccess, writeVersion(stdout)
 	}
 	if *jsonOutput && *humanOutput {
 		return exitFatal, errors.New("-json and -human cannot be used together")
@@ -140,6 +147,23 @@ func run(
 		return exitFatal, err
 	}
 	return reportExitCode(report), nil
+}
+
+func writeVersion(writer io.Writer) error {
+	matcher, err := licenses.New()
+	if err != nil {
+		return err
+	}
+	corpus := matcher.Corpus()
+	_, err = fmt.Fprintf(
+		writer,
+		"licenses %s (ScanCode %s, %d rules, commit %s)\n",
+		version,
+		corpus.Version,
+		corpus.RuleCount,
+		corpus.SourceCommit,
+	)
+	return err
 }
 
 func reportExitCode(report scanReport) int {
