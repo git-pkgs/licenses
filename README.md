@@ -10,7 +10,9 @@ or Python.
 Install the repository scanner with Homebrew:
 
 ```bash
-brew install git-pkgs/git-pkgs/licenses
+brew tap git-pkgs/git-pkgs
+brew trust --tap git-pkgs/git-pkgs
+brew install licenses
 ```
 
 Or with Go:
