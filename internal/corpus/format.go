@@ -7,13 +7,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sort"
 	"time"
 
 	"github.com/git-pkgs/licenses/internal/aho"
 )
 
 // FormatVersion is the on-disk corpus index format.
-const FormatVersion = 3
+const FormatVersion = 4
 
 const (
 	FlagLicenseText      uint16 = 1 << 1
@@ -64,6 +65,9 @@ type Index struct {
 	Vocabulary []string
 	Rules      []Rule
 	Automaton  aho.Automaton
+	// SPDXKeys maps lowercase SPDX identifiers, and their deprecated aliases,
+	// to ScanCode license keys.
+	SPDXKeys map[string]string
 }
 
 // Write encodes index as a deterministic gzip-compressed binary stream.
@@ -99,6 +103,10 @@ func Write(w io.Writer, index Index) error {
 		}
 	}
 	if err := writeAutomaton(bw, index.Automaton); err != nil {
+		_ = zw.Close()
+		return err
+	}
+	if err := writeStringMap(bw, index.SPDXKeys); err != nil {
 		_ = zw.Close()
 		return err
 	}
@@ -163,6 +171,18 @@ func validateIndex(index Index) error {
 	}
 	if err := index.Automaton.Validate(len(rules)); err != nil {
 		return fmt.Errorf("corpus: invalid automaton: %w", err)
+	}
+	return validateSPDXKeys(index.SPDXKeys)
+}
+
+func validateSPDXKeys(keys map[string]string) error {
+	if len(keys) > maxRuleCount {
+		return fmt.Errorf("corpus: %d SPDX keys exceeds limit", len(keys))
+	}
+	for key, value := range keys {
+		if key == "" || value == "" {
+			return fmt.Errorf("corpus: SPDX key %q maps to %q", key, value)
+		}
 	}
 	return nil
 }
@@ -253,6 +273,26 @@ func writeOptional(w io.Writer, value uint32) error {
 	return writeUvarint(w, uint64(value)+1)
 }
 
+func writeStringMap(w io.Writer, values map[string]string) error {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	if err := writeUvarint(w, uint64(len(keys))); err != nil {
+		return err
+	}
+	for _, key := range keys {
+		if err := writeString(w, key); err != nil {
+			return err
+		}
+		if err := writeString(w, values[key]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func writeStrings(w io.Writer, values []string) error {
 	if err := writeUvarint(w, uint64(len(values))); err != nil {
 		return err
@@ -336,6 +376,10 @@ func Read(r io.Reader) (Index, error) {
 	if err != nil {
 		return Index{}, err
 	}
+	spdxKeys, err := readStringMap(br, maxRuleCount)
+	if err != nil {
+		return Index{}, fmt.Errorf("corpus: read SPDX keys: %w", err)
+	}
 	if _, err := br.ReadByte(); !errors.Is(err, io.EOF) {
 		if err == nil {
 			return Index{}, errors.New("corpus: trailing data")
@@ -348,7 +392,39 @@ func Read(r io.Reader) (Index, error) {
 		Vocabulary: vocabulary,
 		Rules:      rules,
 		Automaton:  automaton,
+		SPDXKeys:   spdxKeys,
 	}, nil
+}
+
+func readStringMap(r *bufio.Reader, limit uint64) (map[string]string, error) {
+	count, err := readCount(r, limit, "map")
+	if err != nil {
+		return nil, err
+	}
+	values := make(map[string]string, count)
+	var previous string
+	for range count {
+		key, err := readString(r)
+		if err != nil {
+			return nil, err
+		}
+		if key == "" {
+			return nil, errors.New("empty key")
+		}
+		if key <= previous {
+			return nil, fmt.Errorf("keys are not strictly sorted at %q", key)
+		}
+		previous = key
+		value, err := readString(r)
+		if err != nil {
+			return nil, err
+		}
+		if value == "" {
+			return nil, fmt.Errorf("key %q has an empty value", key)
+		}
+		values[key] = value
+	}
+	return values, nil
 }
 
 func readHeader(r *bufio.Reader) (Info, error) {

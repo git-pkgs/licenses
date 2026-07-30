@@ -22,6 +22,8 @@ const (
 	Hash Method = "hash"
 	// Exact is an exact token-sequence match within a larger input.
 	Exact Method = "exact"
+	// SpdxID is an SPDX-License-Identifier tag match.
+	SpdxID Method = "spdx-id"
 )
 
 // Kind identifies the ScanCode category of a matched rule.
@@ -141,6 +143,7 @@ type matchEngine struct {
 	expressionMetadata     []expressionMetadata
 	automaton              aho.Automaton
 	hashes                 map[uint64][]uint32
+	spdx                   spdxIndex
 }
 
 type expressionMetadata struct {
@@ -221,6 +224,7 @@ func newMatchEngine(index corpus.Index) (*matchEngine, error) {
 		expressionMetadata:     metadata,
 		automaton:              index.Automaton,
 		hashes:                 hashes,
+		spdx:                   buildSPDXIndex(index),
 	}, nil
 }
 
@@ -244,7 +248,9 @@ func (m *Matcher) match(ctx context.Context, b []byte, filters exactFilterOption
 
 	tokens := m.engine.vocabulary.Tokenize(b)
 	result := Result{Corpus: m.engine.info}
+	m.matchSPDXTags(b, &result)
 	if len(tokens.IDs) == 0 {
+		sortResult(&result)
 		return result, nil
 	}
 	candidates, err := m.engine.collectExactMatches(ctx, tokens.IDs)
@@ -444,14 +450,23 @@ func addMatch(
 		result.Clues = append(result.Clues, match)
 		return
 	}
+	addDetection(result, rule.Expression, identification, match)
+}
+
+func addDetection(
+	result *Result,
+	expression string,
+	identification Identification,
+	match Match,
+) {
 	for index := range result.Detections {
-		if result.Detections[index].Expression == rule.Expression {
+		if result.Detections[index].Expression == expression {
 			result.Detections[index].Matches = append(result.Detections[index].Matches, match)
 			return
 		}
 	}
 	result.Detections = append(result.Detections, Detection{
-		Expression:     rule.Expression,
+		Expression:     expression,
 		Identification: identification,
 		Matches:        []Match{match},
 	})

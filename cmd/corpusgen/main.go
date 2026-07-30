@@ -32,19 +32,21 @@ type sourceVersion struct {
 }
 
 type metadata struct {
-	Key                string `yaml:"key"`
-	LicenseExpression  string `yaml:"license_expression"`
-	Relevance          *int   `yaml:"relevance"`
-	IsLicenseText      bool   `yaml:"is_license_text"`
-	IsLicenseNotice    bool   `yaml:"is_license_notice"`
-	IsLicenseTag       bool   `yaml:"is_license_tag"`
-	IsLicenseReference bool   `yaml:"is_license_reference"`
-	IsLicenseIntro     bool   `yaml:"is_license_intro"`
-	IsLicenseClue      bool   `yaml:"is_license_clue"`
-	IsFalsePositive    bool   `yaml:"is_false_positive"`
-	IsRequiredPhrase   bool   `yaml:"is_required_phrase"`
-	IsContinuous       bool   `yaml:"is_continuous"`
-	IsDeprecated       bool   `yaml:"is_deprecated"`
+	Key                  string   `yaml:"key"`
+	SPDXLicenseKey       string   `yaml:"spdx_license_key"`
+	OtherSPDXLicenseKeys []string `yaml:"other_spdx_license_keys"`
+	LicenseExpression    string   `yaml:"license_expression"`
+	Relevance            *int     `yaml:"relevance"`
+	IsLicenseText        bool     `yaml:"is_license_text"`
+	IsLicenseNotice      bool     `yaml:"is_license_notice"`
+	IsLicenseTag         bool     `yaml:"is_license_tag"`
+	IsLicenseReference   bool     `yaml:"is_license_reference"`
+	IsLicenseIntro       bool     `yaml:"is_license_intro"`
+	IsLicenseClue        bool     `yaml:"is_license_clue"`
+	IsFalsePositive      bool     `yaml:"is_false_positive"`
+	IsRequiredPhrase     bool     `yaml:"is_required_phrase"`
+	IsContinuous         bool     `yaml:"is_continuous"`
+	IsDeprecated         bool     `yaml:"is_deprecated"`
 }
 
 func main() {
@@ -151,11 +153,16 @@ func verifyCheckout(root, wantCommit string) error {
 
 func buildIndex(root string, version sourceVersion) (corpus.Index, error) {
 	dataRoot := filepath.Join(root, "src", "licensedcode", "data")
-	licenses, err := loadDirectory(filepath.Join(dataRoot, "licenses"), ".LICENSE", true)
+	licensesDirectory := filepath.Join(dataRoot, "licenses")
+	licenses, err := loadDirectory(licensesDirectory, ".LICENSE", true)
 	if err != nil {
 		return corpus.Index{}, err
 	}
 	rules, err := loadDirectory(filepath.Join(dataRoot, "rules"), ".RULE", false)
+	if err != nil {
+		return corpus.Index{}, err
+	}
+	spdxKeys, err := loadSPDXKeys(licensesDirectory)
 	if err != nil {
 		return corpus.Index{}, err
 	}
@@ -202,7 +209,67 @@ func buildIndex(root string, version sourceVersion) (corpus.Index, error) {
 		Vocabulary: vocabulary.Words(),
 		Rules:      records,
 		Automaton:  automaton,
+		SPDXKeys:   spdxKeys,
 	}, nil
+}
+
+// loadSPDXKeys builds the SPDX-id to ScanCode-key map from the licenses
+// directory. Precedence on conflict is: a license's own key, then its primary
+// spdx_license_key, then other_spdx_license_keys aliases. ScanCode's data
+// contains a small number of aliases that collide with another license's key.
+func loadSPDXKeys(path string) (map[string]string, error) {
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", path, err)
+	}
+	metas := make([]metadata, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".LICENSE" {
+			continue
+		}
+		licensePath := filepath.Join(path, entry.Name())
+		data, err := os.ReadFile(licensePath)
+		if err != nil {
+			return nil, fmt.Errorf("read %s: %w", licensePath, err)
+		}
+		frontmatter, _, err := splitFrontmatter(data)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", licensePath, err)
+		}
+		var meta metadata
+		if err := yaml.Unmarshal(frontmatter, &meta); err != nil {
+			return nil, fmt.Errorf("%s: parse metadata: %w", licensePath, err)
+		}
+		if meta.Key == "" {
+			return nil, fmt.Errorf("%s: missing key", licensePath)
+		}
+		metas = append(metas, meta)
+	}
+
+	keys := make(map[string]string, len(metas))
+	for _, meta := range metas {
+		addSPDXKey(keys, meta.Key, meta.Key)
+	}
+	for _, meta := range metas {
+		addSPDXKey(keys, meta.SPDXLicenseKey, meta.Key)
+	}
+	for _, meta := range metas {
+		for _, other := range meta.OtherSPDXLicenseKeys {
+			addSPDXKey(keys, other, meta.Key)
+		}
+	}
+	return keys, nil
+}
+
+func addSPDXKey(keys map[string]string, spdx, scancode string) {
+	if spdx == "" {
+		return
+	}
+	lower := strings.ToLower(spdx)
+	if _, exists := keys[lower]; exists {
+		return
+	}
+	keys[lower] = scancode
 }
 
 func loadDirectory(path, extension string, licenseText bool) ([]corpus.Rule, error) {

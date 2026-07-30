@@ -42,6 +42,10 @@ func TestRoundTrip(t *testing.T) {
 			},
 		},
 		Automaton: automaton,
+		SPDXKeys: map[string]string{
+			"apache-2.0":   "apache-2.0",
+			"bsd-3-clause": "bsd-new",
+		},
 	}
 
 	var first bytes.Buffer
@@ -78,6 +82,11 @@ func TestRoundTrip(t *testing.T) {
 	}
 	if err := got.Automaton.Validate(2); err != nil {
 		t.Fatal(err)
+	}
+	if len(got.SPDXKeys) != 2 ||
+		got.SPDXKeys["apache-2.0"] != "apache-2.0" ||
+		got.SPDXKeys["bsd-3-clause"] != "bsd-new" {
+		t.Fatalf("spdx keys = %#v", got.SPDXKeys)
 	}
 }
 

@@ -1,0 +1,262 @@
+package licenses
+
+import (
+	"bytes"
+	"slices"
+	"strings"
+
+	"github.com/git-pkgs/licenses/internal/corpus"
+)
+
+const (
+	spdxTagRuleID            = "spdx-license-identifier"
+	licenseRefScancodePrefix = "licenseref-scancode-"
+	unknownSPDXKey           = "unknown-spdx"
+	maxSPDXExpressionBytes   = 1024
+)
+
+// spdxTags lists the tag spellings recognised as SPDX identifier lines.
+// ScanCode also accepts the common "identifer" typo.
+var spdxTags = []string{
+	"spdx-license-identifier",
+	"spdx-license-identifer",
+}
+
+// spdxIndex maps lowercase SPDX identifiers and ScanCode license keys to the
+// ScanCode key used in rule expressions.
+type spdxIndex struct {
+	keys map[string]string
+}
+
+// buildSPDXIndex constructs the SPDX identifier map. SPDXKeys from the corpus
+// is authoritative; every identifier that appears in a rule expression maps to
+// itself when not already covered.
+func buildSPDXIndex(index corpus.Index) spdxIndex {
+	keys := make(map[string]string, len(index.SPDXKeys))
+	for spdx, scancode := range index.SPDXKeys {
+		keys[spdx] = scancode
+	}
+	for _, rule := range index.Rules {
+		if rule.Flags&corpus.FlagFalsePositive != 0 {
+			continue
+		}
+		for _, identifier := range expressionIDs(rule.Expression) {
+			lower := strings.ToLower(identifier)
+			if _, exists := keys[lower]; !exists {
+				keys[lower] = lower
+			}
+		}
+	}
+	return spdxIndex{keys: keys}
+}
+
+// resolve returns the ScanCode key for an SPDX identifier token.
+func (index spdxIndex) resolve(identifier string) string {
+	lower := strings.ToLower(identifier)
+	if key, ok := index.keys[lower]; ok {
+		return key
+	}
+	if scancode, ok := strings.CutPrefix(lower, licenseRefScancodePrefix); ok {
+		if key, ok := index.keys[scancode]; ok {
+			return key
+		}
+	}
+	return unknownSPDXKey
+}
+
+// matchSPDXTags scans input for SPDX-License-Identifier tags and appends a
+// tag-kind match per resolved expression. The scan is a single pass anchored
+// on 's' bytes with a case-insensitive prefix check.
+func (m *Matcher) matchSPDXTags(input []byte, result *Result) {
+	for offset := 0; offset < len(input); {
+		anchor := indexSPDXAnchor(input, offset)
+		if anchor < 0 {
+			return
+		}
+		tagEnd := spdxTagEnd(input, anchor)
+		if tagEnd < 0 {
+			offset = anchor + 1
+			continue
+		}
+		expressionStart, expressionEnd := spdxExpressionSpan(input, tagEnd)
+		offset = max(expressionEnd, tagEnd)
+		if expressionStart >= expressionEnd {
+			continue
+		}
+		expression, identifiers := m.engine.spdx.normalizeExpression(
+			input[expressionStart:expressionEnd],
+		)
+		if expression == "" {
+			continue
+		}
+		match := Match{
+			RuleID:     spdxTagRuleID,
+			LicenseIDs: identifiers,
+			Kind:       KindTag,
+			Method:     SpdxID,
+			Score:      fullScore,
+			Coverage:   fullScore,
+			Start:      anchor,
+			End:        expressionEnd,
+		}
+		if m.matchedText {
+			match.Matched = slices.Clone(input[anchor:expressionEnd])
+		}
+		addDetection(result, expression, identificationForIDs(identifiers), match)
+	}
+}
+
+// indexSPDXAnchor returns the next offset at which the four bytes SPDX begin,
+// case-insensitively, or -1.
+func indexSPDXAnchor(input []byte, from int) int {
+	for offset := from; offset+4 <= len(input); {
+		relative := bytes.IndexByte(input[offset:], 's')
+		upper := bytes.IndexByte(input[offset:], 'S')
+		switch {
+		case relative < 0:
+			relative = upper
+		case upper >= 0 && upper < relative:
+			relative = upper
+		}
+		if relative < 0 {
+			return -1
+		}
+		anchor := offset + relative
+		if anchor+4 <= len(input) &&
+			lowerASCII(input[anchor+1]) == 'p' &&
+			lowerASCII(input[anchor+2]) == 'd' &&
+			lowerASCII(input[anchor+3]) == 'x' {
+			return anchor
+		}
+		offset = anchor + 1
+	}
+	return -1
+}
+
+// spdxTagEnd returns the offset immediately after the tag colon when input at
+// anchor begins an SPDX-License-Identifier tag, or -1.
+func spdxTagEnd(input []byte, anchor int) int {
+	for _, tag := range spdxTags {
+		end := anchor + len(tag)
+		if end < len(input) &&
+			equalFoldASCII(input[anchor:end], tag) &&
+			input[end] == ':' {
+			return end + 1
+		}
+	}
+	return -1
+}
+
+// spdxExpressionSpan returns the trimmed byte range of the expression that
+// follows a tag colon. The expression ends at end-of-line, a closing block
+// comment marker, or maxSPDXExpressionBytes.
+func spdxExpressionSpan(input []byte, from int) (int, int) {
+	limit := min(len(input), from+maxSPDXExpressionBytes)
+	end := limit
+	for offset := from; offset < limit; offset++ {
+		switch input[offset] {
+		case '\n', '\r':
+			end = offset
+		case '*':
+			if offset+1 < limit && input[offset+1] == '/' {
+				end = offset
+			}
+		case '-':
+			if offset+2 < limit && input[offset+1] == '-' && input[offset+2] == '>' {
+				end = offset
+			}
+		}
+		if end != limit {
+			break
+		}
+	}
+	start := from
+	for start < end && input[start] == ' ' || start < end && input[start] == '\t' {
+		start++
+	}
+	for end > start && (input[end-1] == ' ' || input[end-1] == '\t') {
+		end--
+	}
+	return start, end
+}
+
+// normalizeExpression parses raw SPDX expression bytes and returns the
+// expression rewritten with ScanCode keys plus its distinct identifiers.
+func (index spdxIndex) normalizeExpression(raw []byte) (string, []string) {
+	var expression strings.Builder
+	expression.Grow(len(raw))
+	var identifiers []string
+	var last byte
+	separate := func() {
+		if last != 0 && last != '(' {
+			expression.WriteByte(' ')
+		}
+	}
+
+	for offset := 0; offset < len(raw); {
+		character := raw[offset]
+		switch {
+		case character == ' ' || character == '\t':
+			offset++
+		case character == '(':
+			separate()
+			expression.WriteByte(character)
+			last = character
+			offset++
+		case character == ')':
+			expression.WriteByte(character)
+			last = character
+			offset++
+		case isSPDXTokenByte(character):
+			start := offset
+			for offset < len(raw) && isSPDXTokenByte(raw[offset]) {
+				offset++
+			}
+			token := string(raw[start:offset])
+			separate()
+			switch strings.ToUpper(token) {
+			case "AND", "OR", "WITH":
+				expression.WriteString(strings.ToUpper(token))
+			default:
+				key := index.resolve(token)
+				expression.WriteString(key)
+				if !slices.Contains(identifiers, key) {
+					identifiers = append(identifiers, key)
+				}
+			}
+			last = character
+		default:
+			return "", nil
+		}
+	}
+	if len(identifiers) == 0 {
+		return "", nil
+	}
+	return expression.String(), identifiers
+}
+
+func isSPDXTokenByte(character byte) bool {
+	return character >= 'a' && character <= 'z' ||
+		character >= 'A' && character <= 'Z' ||
+		character >= '0' && character <= '9' ||
+		character == '-' || character == '.' || character == '+'
+}
+
+func equalFoldASCII(input []byte, lower string) bool {
+	if len(input) != len(lower) {
+		return false
+	}
+	for index := range lower {
+		if lowerASCII(input[index]) != lower[index] {
+			return false
+		}
+	}
+	return true
+}
+
+func lowerASCII(character byte) byte {
+	if character >= 'A' && character <= 'Z' {
+		return character + 'a' - 'A'
+	}
+	return character
+}

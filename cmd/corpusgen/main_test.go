@@ -103,6 +103,67 @@ func TestLoadFalsePositiveWithoutExpression(t *testing.T) {
 	}
 }
 
+func TestLoadSPDXKeys(t *testing.T) {
+	t.Parallel()
+
+	directory := t.TempDir()
+	licenses := map[string]string{
+		"bsd-new.LICENSE": "---\n" +
+			"key: bsd-new\n" +
+			"spdx_license_key: BSD-3-Clause\n" +
+			"other_spdx_license_keys:\n" +
+			"    - LicenseRef-scancode-bsd-new\n" +
+			"---\nBody\n",
+		"mit.LICENSE": "---\nkey: mit\nspdx_license_key: MIT\n---\nBody\n",
+		"no-spdx.LICENSE": "---\n" +
+			"key: no-spdx\n" +
+			"other_spdx_license_keys:\n" +
+			"    - MIT\n" +
+			"---\nBody\n",
+	}
+	for name, data := range licenses {
+		path := filepath.Join(directory, name)
+		if err := os.WriteFile(path, []byte(data), fileMode); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	got, err := loadSPDXKeys(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{
+		"mit":                         "mit",
+		"bsd-new":                     "bsd-new",
+		"bsd-3-clause":                "bsd-new",
+		"licenseref-scancode-bsd-new": "bsd-new",
+		"no-spdx":                     "no-spdx",
+	}
+	if len(got) != len(want) {
+		t.Fatalf("keys = %#v, want %#v", got, want)
+	}
+	for key, value := range want {
+		if got[key] != value {
+			t.Errorf("key %q = %q, want %q", key, got[key], value)
+		}
+	}
+}
+
+func TestAddSPDXKeyPrecedence(t *testing.T) {
+	t.Parallel()
+
+	keys := make(map[string]string)
+	addSPDXKey(keys, "MIT", "mit")
+	addSPDXKey(keys, "mit", "other")
+	addSPDXKey(keys, "", "ignored")
+	if keys["mit"] != "mit" {
+		t.Fatalf("mit = %q, want %q", keys["mit"], "mit")
+	}
+	if _, ok := keys[""]; ok {
+		t.Fatal("empty key was added")
+	}
+}
+
 func TestSplitFrontmatterRejectsIncompleteInput(t *testing.T) {
 	t.Parallel()
 
