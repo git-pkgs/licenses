@@ -64,6 +64,14 @@ identifier.
 The three per-file summary counts overlap when one file contains detections in
 more than one identification state.
 
+Each match reports the method that produced it. `hash` is a whole-file match
+against a rule text, `exact` is a rule token sequence found within the file,
+and `spdx-id` is an `SPDX-License-Identifier` tag line. Tag expressions are
+reported using ScanCode license keys, so `BSD-3-Clause` becomes `bsd-new`.
+Identifiers the corpus does not recognise, including `LicenseRef-*` values,
+become `unknown-spdx` and report `NOASSERTION`. Tag matches use the rule id
+`spdx-license-identifier`.
+
 Exit status 0 means detections were found, 1 is a fatal command error, 2 means
 the scan was incomplete because of per-file errors or the file limit, and 3
 means no conclusive detections were found.
@@ -86,9 +94,9 @@ for _, detection := range result.Detections {
 }
 ```
 
-Matching uses normalized whole-text hashes and exact token sequences. It does
-not use fuzzy or sequence matching, so edits within a license can prevent a
-match.
+Matching uses normalized whole-text hashes, exact token sequences, and
+`SPDX-License-Identifier` tag lines. It does not use fuzzy or sequence
+matching, so edits within a license text can prevent a match.
 
 ## Corpus
 
