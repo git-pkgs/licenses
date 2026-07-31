@@ -19,18 +19,23 @@ import (
 	"unicode/utf8"
 
 	licenses "github.com/git-pkgs/licenses"
+	"github.com/git-pkgs/magic"
 )
 
 const (
-	reportSchemaVersion = 1
-	defaultMaxDepth     = 32
-	defaultMaxFiles     = 10_000
-	defaultMaxFileSize  = 1 << 20
-	binaryProbeSize     = 8 << 10
-	maxWorkers          = 16
-	maxReadPreallocate  = 16 << 20
-	utf8BOMSize         = 3
-	minimumMarkerLength = 2
+	reportSchemaVersion     = 1
+	defaultMaxDepth         = 32
+	defaultMaxFiles         = 10_000
+	defaultMaxFileSize      = 1 << 20
+	classificationProbeSize = 8 << 10
+	maxWorkers              = 16
+	maxReadPreallocate      = 16 << 20
+	utf8BOMSize             = 3
+	minimumMarkerLength     = 2
+	encodingUTF8            = "utf-8"
+	encodingUTF16LE         = "utf-16le"
+	encodingUTF16BE         = "utf-16be"
+	encodingLatin1          = "iso-8859-1"
 
 	skipReasonBinary              = "binary"
 	skipReasonConfiguredDirectory = "configured-directory"
@@ -586,17 +591,17 @@ func scanFile(
 	task fileTask,
 	maxFileSize int64,
 ) fileOutcome {
-	data, binaryFile, tooLarge, err := readScannableFile(task.path, maxFileSize)
+	data, detection, tooLarge, err := readScannableFile(task.path, maxFileSize)
 	if err != nil {
 		return fileOutcome{task: task, err: err}
 	}
 	if tooLarge {
 		return fileOutcome{task: task, tooLarge: true}
 	}
-	if binaryFile {
+	if detection.Kind == magic.KindBinary {
 		return fileOutcome{task: task, binary: true}
 	}
-	decoded := decodeText(data)
+	decoded := decodeText(data, detection)
 	result, err := matcher.Match(ctx, decoded.data)
 	if err != nil {
 		return fileOutcome{
@@ -618,27 +623,27 @@ func scanFile(
 	}
 }
 
-func readScannableFile(path string, maximum int64) ([]byte, bool, bool, error) {
+func readScannableFile(path string, maximum int64) ([]byte, magic.Result, bool, error) {
 	file, err := os.Open(path)
 	if err != nil {
-		return nil, false, false, err
+		return nil, magic.Result{}, false, err
 	}
 	defer func() { _ = file.Close() }()
 
 	var data bytes.Buffer
-	probeLimit := int64(binaryProbeSize)
+	probeLimit := int64(classificationProbeSize)
 	if maximum > 0 {
 		probeLimit = min(probeLimit, maximum+1)
 	}
 	_, err = io.CopyN(&data, file, probeLimit)
 	if err != nil && !errors.Is(err, io.EOF) {
-		return nil, false, false, err
+		return nil, magic.Result{}, false, err
 	}
-	if isBinary(data.Bytes()) {
-		return nil, true, false, nil
+	if detection := magic.DetectPrefix(data.Bytes()); detection.Kind == magic.KindBinary {
+		return nil, detection, false, nil
 	}
 	if maximum > 0 && int64(data.Len()) > maximum {
-		return nil, false, true, nil
+		return nil, magic.Result{}, true, nil
 	}
 	growReadBuffer(file, &data, maximum)
 	reader := io.Reader(file)
@@ -646,21 +651,13 @@ func readScannableFile(path string, maximum int64) ([]byte, bool, bool, error) {
 		reader = io.LimitReader(file, maximum-int64(data.Len())+1)
 	}
 	if _, err := io.Copy(&data, reader); err != nil {
-		return nil, false, false, err
+		return nil, magic.Result{}, false, err
 	}
 	if maximum > 0 && int64(data.Len()) > maximum {
-		return nil, false, true, nil
+		return nil, magic.Result{}, true, nil
 	}
-	return data.Bytes(), false, false, nil
-}
-
-func isBinary(data []byte) bool {
-	probe := data[:min(len(data), binaryProbeSize)]
-	if bytes.HasPrefix(probe, []byte{0xff, 0xfe}) ||
-		bytes.HasPrefix(probe, []byte{0xfe, 0xff}) {
-		return false
-	}
-	return bytes.IndexByte(probe, 0) >= 0
+	content := data.Bytes()
+	return content, magic.Detect(content), false, nil
 }
 
 func growReadBuffer(file *os.File, data *bytes.Buffer, maximum int64) {
@@ -678,23 +675,27 @@ func growReadBuffer(file *os.File, data *bytes.Buffer, maximum int64) {
 	data.Grow(int(size) - data.Len())
 }
 
-func decodeText(data []byte) decodedText {
-	switch {
-	case bytes.HasPrefix(data, []byte{0xef, 0xbb, 0xbf}):
+func decodeText(data []byte, detection magic.Result) decodedText {
+	switch detection.Encoding {
+	case encodingUTF8:
+		if !bytes.HasPrefix(data, []byte{0xef, 0xbb, 0xbf}) {
+			return decodedText{data: data, encoding: encodingUTF8}
+		}
 		return decodedText{
 			data:       data[utf8BOMSize:],
 			offsetBase: utf8BOMSize,
-			encoding:   "utf-8",
+			encoding:   encodingUTF8,
 		}
-	case bytes.HasPrefix(data, []byte{0xff, 0xfe}):
-		return decodeUTF16(data, binary.LittleEndian, "utf-16le")
-	case bytes.HasPrefix(data, []byte{0xfe, 0xff}):
-		return decodeUTF16(data, binary.BigEndian, "utf-16be")
-	case utf8.Valid(data):
-		return decodedText{data: data, encoding: "utf-8"}
-	default:
+	case encodingUTF16LE:
+		return decodeUTF16(data, binary.LittleEndian, encodingUTF16LE)
+	case encodingUTF16BE:
+		return decodeUTF16(data, binary.BigEndian, encodingUTF16BE)
+	}
+	if detection.Kind == magic.KindUnknown &&
+		detection.Reason == magic.ReasonInvalidText {
 		return decodeLatin1(data)
 	}
+	return decodedText{data: data, encoding: encodingUTF8}
 }
 
 func decodeUTF16(data []byte, order binary.ByteOrder, name string) decodedText {
@@ -736,7 +737,7 @@ func decodeLatin1(data []byte) decodedText {
 	decoded := decodedText{
 		data:     make([]byte, 0, len(data)),
 		offsets:  []int{0},
-		encoding: "iso-8859-1",
+		encoding: encodingLatin1,
 	}
 	for position, value := range data {
 		decoded.appendRune(rune(value), position, position+1)
