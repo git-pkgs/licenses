@@ -11,6 +11,7 @@ import (
 	"unicode/utf16"
 
 	licenses "github.com/git-pkgs/licenses"
+	"github.com/git-pkgs/magic"
 )
 
 func TestScanRepository(t *testing.T) {
@@ -92,6 +93,46 @@ func TestScanRepository(t *testing.T) {
 	}
 	if report.Corpus.RuleCount == 0 || report.Corpus.SourceCommit == "" {
 		t.Errorf("corpus = %#v, want populated metadata", report.Corpus)
+	}
+}
+
+func TestScanRepositorySkipsDetectedBinary(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := map[string][]byte{
+		"control":   []byte("plain\x01text"),
+		"early-nul": []byte("plain\x00text"),
+		"late-nul":  append([]byte(strings.Repeat("x", classificationProbeSize)), 0),
+		"pdf":       []byte("%PDF-1.7\n%%EOF\n"),
+	}
+	for name, data := range files {
+		writeTestFile(t, filepath.Join(root, name), data)
+	}
+
+	report, err := scanRepository(
+		context.Background(),
+		newTestMatcher(t),
+		root,
+		defaultTestScanOptions(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Summary.FilesSkippedBinary != len(files) {
+		t.Errorf(
+			"binary files skipped = %d, want %d",
+			report.Summary.FilesSkippedBinary,
+			len(files),
+		)
+	}
+	if report.Summary.FilesScanned != 0 {
+		t.Errorf("files scanned = %d, want 0", report.Summary.FilesScanned)
+	}
+	for name := range files {
+		if !hasSkip(report.Skipped, skipRecord{Path: name, Reason: skipReasonBinary}) {
+			t.Errorf("skipped = %#v, want %s as binary", report.Skipped, name)
+		}
 	}
 }
 
@@ -339,6 +380,40 @@ func TestScanRepositoryDecodesLicenseText(t *testing.T) {
 				t.Errorf("matched text differs from decoded UTF-8 reference")
 			}
 		})
+	}
+}
+
+func TestScanRepositoryFallsBackToLatin1ForMalformedUTF16(t *testing.T) {
+	t.Parallel()
+
+	license := projectLicense(t)
+	prefix := []byte{0xff, 0xfe, 'x'}
+	if (len(prefix)-2+len(license))%2 == 0 {
+		prefix = append(prefix, 'x')
+	}
+	data := make([]byte, 0, len(prefix)+len(license))
+	data = append(data, prefix...)
+	data = append(data, license...)
+	path := filepath.Join(t.TempDir(), "LICENSE")
+	writeTestFile(t, path, data)
+
+	report, err := scanRepository(
+		context.Background(),
+		newTestMatcher(t),
+		path,
+		defaultTestScanOptions(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Files) != 1 {
+		t.Fatalf("files = %#v, want one", report.Files)
+	}
+	if report.Files[0].Encoding != "iso-8859-1" {
+		t.Errorf("encoding = %q, want iso-8859-1", report.Files[0].Encoding)
+	}
+	if !hasMITExpression(report.Files[0]) {
+		t.Errorf("detections = %#v, want MIT", report.Files[0].Detections)
 	}
 }
 
@@ -917,15 +992,6 @@ func TestScanRepositoryCancelled(t *testing.T) {
 func TestScanHelpers(t *testing.T) {
 	t.Parallel()
 
-	if !isBinary([]byte("text\x00data")) {
-		t.Error("NUL-containing data was not binary")
-	}
-	if isBinary([]byte("plain text")) {
-		t.Error("plain text was binary")
-	}
-	if isBinary([]byte{0xff, 0xfe, 't', 0, 'e', 0, 'x', 0, 't', 0}) {
-		t.Error("UTF-16LE text was binary")
-	}
 	if pathDepth(filepath.Join("one", "two", "three")) != 3 {
 		t.Errorf("path depth = %d, want 3", pathDepth(filepath.Join("one", "two", "three")))
 	}
@@ -950,6 +1016,84 @@ func TestScanHelpers(t *testing.T) {
 	}
 	if skippedDirectoryReason("src", scanOptions{}) != "" {
 		t.Error("src directory was skipped")
+	}
+}
+
+func TestReadScannableFileClassification(t *testing.T) {
+	t.Parallel()
+
+	plain := []byte("plain text")
+	tests := []struct {
+		name     string
+		data     []byte
+		maximum  int64
+		kind     magic.Kind
+		encoding string
+		reason   magic.Reason
+	}{
+		{
+			name: "empty",
+			kind: magic.KindText,
+		},
+		{
+			name:     "text at maximum size",
+			data:     plain,
+			maximum:  int64(len(plain)),
+			kind:     magic.KindText,
+			encoding: "utf-8",
+		},
+		{
+			name:     "UTF-16LE",
+			data:     encodeUTF16(plain, binary.LittleEndian),
+			kind:     magic.KindText,
+			encoding: "utf-16le",
+		},
+		{
+			name:     "UTF-16BE",
+			data:     encodeUTF16(plain, binary.BigEndian),
+			kind:     magic.KindText,
+			encoding: "utf-16be",
+		},
+		{
+			name:   "malformed UTF-16",
+			data:   []byte{0xff, 0xfe, 'x'},
+			kind:   magic.KindUnknown,
+			reason: magic.ReasonInvalidText,
+		},
+		{
+			name:   "invalid UTF-8",
+			data:   []byte{'c', 'a', 'f', 0xe9},
+			kind:   magic.KindUnknown,
+			reason: magic.ReasonInvalidText,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "input")
+			writeTestFile(t, path, test.data)
+
+			data, detection, tooLarge, err := readScannableFile(path, test.maximum)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tooLarge {
+				t.Fatal("file was reported as too large")
+			}
+			if string(data) != string(test.data) {
+				t.Fatalf("data = %x, want %x", data, test.data)
+			}
+			if detection.Kind != test.kind ||
+				detection.Encoding != test.encoding ||
+				detection.Reason != test.reason {
+				t.Errorf(
+					"detection = %#v, want kind %q, encoding %q, reason %q",
+					detection,
+					test.kind,
+					test.encoding,
+					test.reason,
+				)
+			}
+		})
 	}
 }
 
