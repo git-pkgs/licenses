@@ -14,7 +14,7 @@ import (
 )
 
 // FormatVersion is the on-disk corpus index format.
-const FormatVersion = 4
+const FormatVersion = 5
 
 const (
 	FlagLicenseText      uint16 = 1 << 1
@@ -68,6 +68,9 @@ type Index struct {
 	// SPDXKeys maps lowercase SPDX identifiers, and their deprecated aliases,
 	// to ScanCode license keys.
 	SPDXKeys map[string]string
+	// ReportingIDs maps ScanCode license keys to their canonical SPDX
+	// identifier or LicenseRef-scancode-* value.
+	ReportingIDs map[string]string
 }
 
 // Write encodes index as a deterministic gzip-compressed binary stream.
@@ -107,6 +110,10 @@ func Write(w io.Writer, index Index) error {
 		return err
 	}
 	if err := writeStringMap(bw, index.SPDXKeys); err != nil {
+		_ = zw.Close()
+		return err
+	}
+	if err := writeStringMap(bw, index.ReportingIDs); err != nil {
 		_ = zw.Close()
 		return err
 	}
@@ -172,16 +179,23 @@ func validateIndex(index Index) error {
 	if err := index.Automaton.Validate(len(rules)); err != nil {
 		return fmt.Errorf("corpus: invalid automaton: %w", err)
 	}
-	return validateSPDXKeys(index.SPDXKeys)
+	return validateIdentifierMaps(index)
 }
 
-func validateSPDXKeys(keys map[string]string) error {
+func validateIdentifierMaps(index Index) error {
+	if err := validateIdentifierMap("SPDX keys", index.SPDXKeys); err != nil {
+		return err
+	}
+	return validateIdentifierMap("reporting IDs", index.ReportingIDs)
+}
+
+func validateIdentifierMap(name string, keys map[string]string) error {
 	if len(keys) > maxRuleCount {
-		return fmt.Errorf("corpus: %d SPDX keys exceeds limit", len(keys))
+		return fmt.Errorf("corpus: %d %s exceeds limit", len(keys), name)
 	}
 	for key, value := range keys {
 		if key == "" || value == "" {
-			return fmt.Errorf("corpus: SPDX key %q maps to %q", key, value)
+			return fmt.Errorf("corpus: %s %q maps to %q", name, key, value)
 		}
 	}
 	return nil
@@ -380,6 +394,10 @@ func Read(r io.Reader) (Index, error) {
 	if err != nil {
 		return Index{}, fmt.Errorf("corpus: read SPDX keys: %w", err)
 	}
+	reportingIDs, err := readStringMap(br, maxRuleCount)
+	if err != nil {
+		return Index{}, fmt.Errorf("corpus: read reporting IDs: %w", err)
+	}
 	if _, err := br.ReadByte(); !errors.Is(err, io.EOF) {
 		if err == nil {
 			return Index{}, errors.New("corpus: trailing data")
@@ -388,11 +406,12 @@ func Read(r io.Reader) (Index, error) {
 	}
 	info.RuleCount = count
 	return Index{
-		Info:       info,
-		Vocabulary: vocabulary,
-		Rules:      rules,
-		Automaton:  automaton,
-		SPDXKeys:   spdxKeys,
+		Info:         info,
+		Vocabulary:   vocabulary,
+		Rules:        rules,
+		Automaton:    automaton,
+		SPDXKeys:     spdxKeys,
+		ReportingIDs: reportingIDs,
 	}, nil
 }
 

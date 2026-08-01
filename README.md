@@ -58,16 +58,20 @@ Setting any limit to zero removes that guard.
 
 The scanner accepts UTF-8, UTF-16LE or UTF-16BE with a byte-order mark, and
 Latin-1. Reported byte ranges refer to the original file. JSON reports use
-schema version 1. Schema 1 is additive: consumers must ignore unknown fields
+schema version 2. Schema 2 is additive: consumers must ignore unknown fields
 and accept file records with empty `detections` when `clues` are present. With
 `-matched-text`, `matched` contains decoded UTF-8 rather than the original
 encoded bytes.
 
 Detection and expression records include `identification`. Its value is
 `identified`, `partial`, or SPDX's `NOASSERTION`. Partial expressions contain
-both non-placeholder and ScanCode placeholder identifiers. `NOASSERTION`
-detections confirm license-related text without naming another license
-identifier.
+both concrete identifiers and ScanCode placeholder `LicenseRef-*` values.
+`NOASSERTION` detections confirm license-related text without naming another
+license identifier.
+
+Reported expressions use canonical SPDX identifiers when ScanCode supplies
+one. Other ScanCode license keys use `LicenseRef-scancode-<key>`. ScanCode rule
+IDs remain in each match for traceability.
 
 The three per-file summary counts overlap when one file contains detections in
 more than one identification state.
@@ -76,11 +80,11 @@ Each match reports the method that produced it. `hash` is a whole-file match
 against a rule text, `exact` is a rule token sequence found within the file,
 and `spdx-id` is an `SPDX-License-Identifier` tag line whose expression bytes
 are not already covered by a rule match. Tag expressions are parsed strictly
-with `github.com/git-pkgs/spdx` and reported using ScanCode license keys, so
-`BSD-3-Clause` becomes `bsd-new`. Valid custom `LicenseRef-*` values become
-`unknown-spdx` and report `NOASSERTION`. Malformed expressions and unknown
-bare identifiers do not produce an `spdx-id` match. Tag matches use the rule
-id `spdx-license-identifier`.
+with `github.com/git-pkgs/spdx` and normalized to the primary SPDX identifiers
+in ScanCode's metadata. Valid custom `LicenseRef-*` values become
+`LicenseRef-scancode-unknown-spdx` and report `NOASSERTION`. Malformed
+expressions and unknown bare identifiers do not produce an `spdx-id` match.
+Tag matches use the rule id `spdx-license-identifier`.
 
 Exit status 0 means detections were found, 1 is a fatal command error, 2 means
 the scan was incomplete because of per-file errors or the file limit, and 3

@@ -162,7 +162,7 @@ func buildIndex(root string, version sourceVersion) (corpus.Index, error) {
 	if err != nil {
 		return corpus.Index{}, err
 	}
-	spdxKeys, err := loadSPDXKeys(licensesDirectory)
+	spdxKeys, reportingIDs, err := loadSPDXMappings(licensesDirectory)
 	if err != nil {
 		return corpus.Index{}, err
 	}
@@ -206,21 +206,23 @@ func buildIndex(root string, version sourceVersion) (corpus.Index, error) {
 			RuleCount:    len(records),
 			SourceCommit: version.Commit,
 		},
-		Vocabulary: vocabulary.Words(),
-		Rules:      records,
-		Automaton:  automaton,
-		SPDXKeys:   spdxKeys,
+		Vocabulary:   vocabulary.Words(),
+		Rules:        records,
+		Automaton:    automaton,
+		SPDXKeys:     spdxKeys,
+		ReportingIDs: reportingIDs,
 	}, nil
 }
 
-// loadSPDXKeys builds the SPDX-id to ScanCode-key map from the licenses
-// directory. Precedence on conflict is: a license's own key, then its primary
-// spdx_license_key, then other_spdx_license_keys aliases. ScanCode's data
-// contains a small number of aliases that collide with another license's key.
-func loadSPDXKeys(path string) (map[string]string, error) {
+// loadSPDXMappings builds maps between ScanCode keys and SPDX identifiers from
+// the licenses directory. Input precedence on conflict is: a license's own
+// key, then its primary spdx_license_key, then other_spdx_license_keys aliases.
+// ScanCode's data contains a small number of aliases that collide with another
+// license's key.
+func loadSPDXMappings(path string) (map[string]string, map[string]string, error) {
 	entries, err := os.ReadDir(path)
 	if err != nil {
-		return nil, fmt.Errorf("read %s: %w", path, err)
+		return nil, nil, fmt.Errorf("read %s: %w", path, err)
 	}
 	metas := make([]metadata, 0, len(entries))
 	for _, entry := range entries {
@@ -230,35 +232,43 @@ func loadSPDXKeys(path string) (map[string]string, error) {
 		licensePath := filepath.Join(path, entry.Name())
 		data, err := os.ReadFile(licensePath)
 		if err != nil {
-			return nil, fmt.Errorf("read %s: %w", licensePath, err)
+			return nil, nil, fmt.Errorf("read %s: %w", licensePath, err)
 		}
 		frontmatter, _, err := splitFrontmatter(data)
 		if err != nil {
-			return nil, fmt.Errorf("%s: %w", licensePath, err)
+			return nil, nil, fmt.Errorf("%s: %w", licensePath, err)
 		}
 		var meta metadata
 		if err := yaml.Unmarshal(frontmatter, &meta); err != nil {
-			return nil, fmt.Errorf("%s: parse metadata: %w", licensePath, err)
+			return nil, nil, fmt.Errorf("%s: parse metadata: %w", licensePath, err)
 		}
 		if meta.Key == "" {
-			return nil, fmt.Errorf("%s: missing key", licensePath)
+			return nil, nil, fmt.Errorf("%s: missing key", licensePath)
 		}
 		metas = append(metas, meta)
 	}
 
 	keys := make(map[string]string, len(metas))
+	reportingIDs := make(map[string]string, len(metas))
+	for _, meta := range metas {
+		reportingID := meta.SPDXLicenseKey
+		if reportingID == "" {
+			reportingID = "LicenseRef-scancode-" + meta.Key
+		}
+		reportingIDs[strings.ToLower(meta.Key)] = reportingID
+	}
 	for _, meta := range metas {
 		addSPDXKey(keys, meta.Key, meta.Key)
 	}
 	for _, meta := range metas {
-		addSPDXKey(keys, meta.SPDXLicenseKey, meta.Key)
+		addSPDXKey(keys, reportingIDs[strings.ToLower(meta.Key)], meta.Key)
 	}
 	for _, meta := range metas {
 		for _, other := range meta.OtherSPDXLicenseKeys {
 			addSPDXKey(keys, other, meta.Key)
 		}
 	}
-	return keys, nil
+	return keys, reportingIDs, nil
 }
 
 func addSPDXKey(keys map[string]string, spdx, scancode string) {

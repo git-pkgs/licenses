@@ -103,7 +103,7 @@ func TestLoadFalsePositiveWithoutExpression(t *testing.T) {
 	}
 }
 
-func TestLoadSPDXKeys(t *testing.T) {
+func TestLoadSPDXMappings(t *testing.T) {
 	t.Parallel()
 
 	directory := t.TempDir()
@@ -128,23 +128,37 @@ func TestLoadSPDXKeys(t *testing.T) {
 		}
 	}
 
-	got, err := loadSPDXKeys(directory)
+	gotKeys, gotReportingIDs, err := loadSPDXMappings(directory)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := map[string]string{
+	wantKeys := map[string]string{
 		"mit":                         "mit",
 		"bsd-new":                     "bsd-new",
 		"bsd-3-clause":                "bsd-new",
 		"licenseref-scancode-bsd-new": "bsd-new",
 		"no-spdx":                     "no-spdx",
+		"licenseref-scancode-no-spdx": "no-spdx",
 	}
-	if len(got) != len(want) {
-		t.Fatalf("keys = %#v, want %#v", got, want)
+	if len(gotKeys) != len(wantKeys) {
+		t.Fatalf("keys = %#v, want %#v", gotKeys, wantKeys)
 	}
-	for key, value := range want {
-		if got[key] != value {
-			t.Errorf("key %q = %q, want %q", key, got[key], value)
+	for key, value := range wantKeys {
+		if gotKeys[key] != value {
+			t.Errorf("key %q = %q, want %q", key, gotKeys[key], value)
+		}
+	}
+	wantReportingIDs := map[string]string{
+		"bsd-new": "BSD-3-Clause",
+		"mit":     "MIT",
+		"no-spdx": "LicenseRef-scancode-no-spdx",
+	}
+	if len(gotReportingIDs) != len(wantReportingIDs) {
+		t.Fatalf("reporting IDs = %#v, want %#v", gotReportingIDs, wantReportingIDs)
+	}
+	for key, value := range wantReportingIDs {
+		if gotReportingIDs[key] != value {
+			t.Errorf("reporting ID %q = %q, want %q", key, gotReportingIDs[key], value)
 		}
 	}
 }

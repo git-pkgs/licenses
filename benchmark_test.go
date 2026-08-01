@@ -129,7 +129,7 @@ func BenchmarkNormalizeSPDXExpression(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for b.Loop() {
-		benchmarkSPDXExpression, benchmarkSPDXIDs = matcher.engine.spdx.normalizeExpression(input)
+		benchmarkSPDXExpression, benchmarkSPDXIDs, _ = matcher.engine.spdx.normalizeExpression(input)
 	}
 }
 
