@@ -39,7 +39,7 @@ licenses -scope all -max-files 0 /path/to/repository
 The command reports detections by file with the matching rule, expression,
 rule kind, score, coverage, and byte range. Each JSON file record also reports
 `license_text_coverage`, the percentage of decoded file bytes covered by the
-union of licence-text and notice matches. JSON is used when output is
+union of license-text and notice matches. JSON is used when output is
 redirected; terminals get a text report. Skipped files and directories are
 named with the reason they were skipped.
 
@@ -70,6 +70,12 @@ Detection and expression records include `identification`. Its value is
 both concrete identifiers and ScanCode placeholder `LicenseRef-*` values.
 `NOASSERTION` detections confirm license-related text without naming another
 license identifier.
+
+JSON reports include a `declared` record for each recognized package manifest
+that declares license values or a license-file path. Each record preserves the
+raw manifest values and includes a normalized SPDX expression when all values
+can be normalized. Multiple values are joined with `OR`; values that cannot be
+normalized remain available in `raw` with an empty `normalized_expression`.
 
 Reported expressions use canonical SPDX identifiers when ScanCode supplies
 one. Other ScanCode license keys use `LicenseRef-scancode-<key>`. ScanCode rule

@@ -20,6 +20,8 @@ import (
 
 	licenses "github.com/git-pkgs/licenses"
 	"github.com/git-pkgs/magic"
+	"github.com/git-pkgs/manifests"
+	"github.com/git-pkgs/spdx"
 )
 
 const (
@@ -91,6 +93,7 @@ type scanReport struct {
 	Scope       string             `json:"scope"`
 	Corpus      corpusRecord       `json:"corpus"`
 	Summary     scanSummary        `json:"summary"`
+	Declared    []declaredRecord   `json:"declared"`
 	Expressions []expressionRecord `json:"expressions"`
 	Files       []fileRecord       `json:"files"`
 	Skipped     []skipRecord       `json:"skipped"`
@@ -125,6 +128,13 @@ type expressionRecord struct {
 	Identification licenses.Identification `json:"identification"`
 	Files          int                     `json:"files"`
 	Matches        int                     `json:"matches"`
+}
+
+type declaredRecord struct {
+	Path                 string   `json:"path"`
+	Raw                  []string `json:"raw"`
+	LicenseFile          string   `json:"license_file"`
+	NormalizedExpression string   `json:"normalized_expression"`
 }
 
 type fileRecord struct {
@@ -195,6 +205,7 @@ type fileDiscovery struct {
 	options    scanOptions
 	summary    *scanSummary
 	tasks      []fileTask
+	declared   []declaredRecord
 	scanErrors []scanErrorRecord
 	skipped    []skipRecord
 }
@@ -223,26 +234,33 @@ func scanRepository(
 	}
 	corpus := matcher.Corpus()
 	report := scanReport{
-		Schema:  reportSchemaVersion,
-		Root:    filepath.Clean(root),
-		Scope:   scanScope(options),
-		Files:   make([]fileRecord, 0),
-		Skipped: make([]skipRecord, 0),
-		Errors:  make([]scanErrorRecord, 0),
+		Schema:   reportSchemaVersion,
+		Root:     filepath.Clean(root),
+		Scope:    scanScope(options),
+		Declared: make([]declaredRecord, 0),
+		Files:    make([]fileRecord, 0),
+		Skipped:  make([]skipRecord, 0),
+		Errors:   make([]scanErrorRecord, 0),
 		Corpus: corpusRecord{
 			Version:      corpus.Version,
 			RuleCount:    corpus.RuleCount,
 			SourceCommit: corpus.SourceCommit,
 		},
 	}
-	tasks, walkErrors, skipped, err := discoverFiles(ctx, root, options, &report.Summary)
+	discovery, err := discoverFiles(
+		ctx,
+		root,
+		options,
+		&report.Summary,
+	)
 	if err != nil {
 		return scanReport{}, err
 	}
-	report.Errors = append(report.Errors, walkErrors...)
-	report.Skipped = append(report.Skipped, skipped...)
+	report.Declared = append(report.Declared, discovery.declared...)
+	report.Errors = append(report.Errors, discovery.scanErrors...)
+	report.Skipped = append(report.Skipped, discovery.skipped...)
 
-	outcomes := scanFiles(ctx, matcher, tasks, options)
+	outcomes := scanFiles(ctx, matcher, discovery.tasks, options)
 	expressions := make(map[string]*expressionRecord)
 	for outcome := range outcomes {
 		if outcome.scanned {
@@ -297,6 +315,9 @@ func scanRepository(
 	slices.SortFunc(report.Files, func(first, second fileRecord) int {
 		return strings.Compare(first.Path, second.Path)
 	})
+	slices.SortFunc(report.Declared, func(first, second declaredRecord) int {
+		return strings.Compare(first.Path, second.Path)
+	})
 	slices.SortFunc(report.Errors, func(first, second scanErrorRecord) int {
 		if compared := strings.Compare(first.Path, second.Path); compared != 0 {
 			return compared
@@ -347,61 +368,65 @@ func discoverFiles(
 	root string,
 	options scanOptions,
 	summary *scanSummary,
-) ([]fileTask, []scanErrorRecord, []skipRecord, error) {
+) (*fileDiscovery, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, nil, nil, err
+		return nil, err
 	}
-	info, err := os.Stat(root)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	if !info.IsDir() {
-		return discoverExplicitFile(root, info, options, summary)
-	}
-	walkRoot, err := filepath.EvalSymlinks(root)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-
-	discovery := fileDiscovery{
+	discovery := &fileDiscovery{
 		ctx:     ctx,
-		root:    walkRoot,
+		root:    root,
 		options: options,
 		summary: summary,
 	}
+	info, err := os.Stat(root)
+	if err != nil {
+		return nil, err
+	}
+	if !info.IsDir() {
+		discovery.discoverExplicitFile(root, info)
+		return discovery, nil
+	}
+	walkRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return nil, err
+	}
+	discovery.root = walkRoot
 	err = filepath.WalkDir(walkRoot, discovery.visit)
 	if err != nil && !errors.Is(err, errFileLimit) {
-		return nil, nil, nil, err
+		return nil, err
 	}
-	return discovery.tasks, discovery.scanErrors, discovery.skipped, nil
+	return discovery, nil
 }
 
-func discoverExplicitFile(
+func (discovery *fileDiscovery) discoverExplicitFile(
 	path string,
 	info os.FileInfo,
-	options scanOptions,
-	summary *scanSummary,
-) ([]fileTask, []scanErrorRecord, []skipRecord, error) {
-	summary.FilesVisited = 1
+) {
+	discovery.summary.FilesVisited = 1
 	if !info.Mode().IsRegular() {
-		summary.FilesSkippedOther = 1
-		return nil, nil, []skipRecord{{
+		discovery.summary.FilesSkippedOther = 1
+		discovery.skipped = append(discovery.skipped, skipRecord{
 			Path:   filepath.Base(path),
 			Reason: skipReasonNonRegular,
-		}}, nil
+		})
+		return
 	}
-	if options.MaxFileSize > 0 && info.Size() > options.MaxFileSize {
-		summary.FilesSkippedSize = 1
-		return nil, nil, []skipRecord{{
+	if discovery.options.MaxFileSize > 0 &&
+		info.Size() > discovery.options.MaxFileSize {
+		discovery.summary.FilesSkippedSize = 1
+		discovery.skipped = append(discovery.skipped, skipRecord{
 			Path:   filepath.Base(path),
 			Reason: skipReasonSize,
-		}}, nil
+		})
+		return
 	}
-	return []fileTask{{
+	display := filepath.Base(path)
+	discovery.tasks = append(discovery.tasks, fileTask{
 		path:       path,
-		display:    filepath.Base(path),
+		display:    display,
 		policyPath: explicitPolicyPath(path),
-	}}, nil, nil, nil
+	})
+	discovery.discoverDeclaredLicense(path, display)
 }
 
 func explicitPolicyPath(filePath string) string {
@@ -507,7 +532,57 @@ func (discovery *fileDiscovery) visitFile(
 		display:    filepath.ToSlash(relative),
 		policyPath: filepath.ToSlash(relative),
 	})
+	discovery.discoverDeclaredLicense(path, filepath.ToSlash(relative))
 	return nil
+}
+
+func (discovery *fileDiscovery) discoverDeclaredLicense(path, display string) {
+	record, ok, err := declaredLicense(path, display)
+	if err != nil {
+		discovery.scanErrors = append(discovery.scanErrors, scanErrorRecord{
+			Path:  display,
+			Error: err.Error(),
+		})
+		return
+	}
+	if ok {
+		discovery.declared = append(discovery.declared, record)
+	}
+}
+
+func declaredLicense(path, display string) (declaredRecord, bool, error) {
+	if _, kind, ok := manifests.Identify(display); !ok || kind != manifests.Manifest {
+		return declaredRecord{}, false, nil
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return declaredRecord{}, false, err
+	}
+	result, err := manifests.Parse(display, content)
+	if err != nil {
+		return declaredRecord{}, false, err
+	}
+	if result == nil ||
+		(len(result.Licenses) == 0 && result.LicenseFile == "") {
+		return declaredRecord{}, false, nil
+	}
+	return declaredRecord{
+		Path:                 display,
+		Raw:                  append([]string{}, result.Licenses...),
+		LicenseFile:          result.LicenseFile,
+		NormalizedExpression: normalizeDeclaredExpression(result.Licenses),
+	}, true, nil
+}
+
+func normalizeDeclaredExpression(raw []string) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	normalized, err := spdx.NormalizeExpressionLax(strings.Join(raw, " OR "))
+	if err != nil {
+		return ""
+	}
+	return normalized
 }
 
 func skippedDirectoryReason(name string, options scanOptions) string {

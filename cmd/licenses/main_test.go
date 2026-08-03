@@ -250,7 +250,7 @@ func TestRunNoDetections(t *testing.T) {
 	if exitCode != exitNoDetections {
 		t.Errorf("exit code = %d, want %d", exitCode, exitNoDetections)
 	}
-	for _, field := range []string{`"expressions": []`, `"files": []`, `"skipped": []`, `"errors": []`} {
+	for _, field := range []string{`"declared": []`, `"expressions": []`, `"files": []`, `"skipped": []`, `"errors": []`} {
 		if !strings.Contains(stdout.String(), field) {
 			t.Errorf("JSON does not contain %q:\n%s", field, stdout.String())
 		}
