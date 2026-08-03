@@ -60,18 +60,24 @@ func buildSPDXIndex(index corpus.Index) spdxIndex {
 	return spdxIndex{keys: keys, reportingIDs: reportingIDs}
 }
 
-// resolve returns the ScanCode key for an SPDX identifier token.
-func (index spdxIndex) resolve(identifier string) string {
+// resolve returns the ScanCode key for an SPDX identifier token. Unknown bare
+// identifiers are rejected, while valid custom license references resolve to
+// unknown-spdx.
+func (index spdxIndex) resolve(identifier string) (string, bool) {
 	lower := strings.ToLower(identifier)
 	if key, ok := index.keys[lower]; ok {
-		return key
+		return key, true
 	}
 	if scancode, ok := strings.CutPrefix(lower, licenseRefScancodePrefix); ok {
 		if key, ok := index.keys[scancode]; ok {
-			return key
+			return key, true
 		}
 	}
-	return unknownSPDXKey
+	if strings.HasPrefix(lower, "licenseref-") ||
+		strings.HasPrefix(lower, "documentref-") {
+		return unknownSPDXKey, true
+	}
+	return "", false
 }
 
 // report returns the canonical SPDX identifier for a ScanCode key, falling
@@ -244,15 +250,20 @@ func spdxExpressionSpan(input []byte, from int) (int, int) {
 // expression rewritten with canonical SPDX identifiers, along with its public
 // identifiers and the ScanCode keys used to classify the result.
 func (index spdxIndex) normalizeExpression(raw []byte) (string, []string, []string) {
-	expression, err := spdx.ParseStrict(string(raw))
+	expression, err := spdx.ParseSyntax(string(raw))
 	if err != nil {
 		return "", nil, nil
 	}
 	foldSPDXPlusModifiers(expression)
 
 	var identifiers, scanCodeIDs []string
+	valid := true
 	rewritten := spdx.RewriteIdentifiers(expression, func(identifier string) string {
-		key := index.resolve(identifier)
+		key, ok := index.resolve(identifier)
+		if !ok {
+			valid = false
+			return identifier
+		}
 		if !slices.Contains(scanCodeIDs, key) {
 			scanCodeIDs = append(scanCodeIDs, key)
 		}
@@ -262,7 +273,7 @@ func (index spdxIndex) normalizeExpression(raw []byte) (string, []string, []stri
 		}
 		return reportingID
 	})
-	if len(identifiers) == 0 {
+	if !valid || len(identifiers) == 0 {
 		return "", nil, nil
 	}
 	return rewritten, identifiers, scanCodeIDs

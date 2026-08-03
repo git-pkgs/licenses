@@ -79,9 +79,10 @@ more than one identification state.
 Each match reports the method that produced it. `hash` is a whole-file match
 against a rule text, `exact` is a rule token sequence found within the file,
 and `spdx-id` is an `SPDX-License-Identifier` tag line whose expression bytes
-are not already covered by a rule match. Tag expressions are parsed strictly
-with `github.com/git-pkgs/spdx` and normalized to the primary SPDX identifiers
-in ScanCode's metadata. Valid custom `LicenseRef-*` values become
+are not already covered by a rule match. Tag expression grammar is parsed with
+`github.com/git-pkgs/spdx`, then bare identifiers are resolved against the
+embedded ScanCode mapping and normalized to the primary SPDX identifiers in
+ScanCode's metadata. Valid custom `LicenseRef-*` values become
 `LicenseRef-scancode-unknown-spdx` and report `NOASSERTION`. Malformed
 expressions and unknown bare identifiers do not produce an `spdx-id` match.
 Tag matches use the rule id `spdx-license-identifier`.
