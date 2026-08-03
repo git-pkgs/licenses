@@ -143,41 +143,8 @@ existing result changes or a new difference appears.
 
 ## Benchmarks
 
-Run the matching benchmarks with:
-
-```bash
-GOMAXPROCS=1 go test \
-  -run '^$' \
-  -bench . \
-  -benchmem \
-  -benchtime 1s \
-  -count 5 \
-  .
-```
-
-Run the repository scan benchmark with:
-
-```bash
-go test ./cmd/licenses \
-  -run '^$' \
-  -bench '^BenchmarkScanRepository$' \
-  -benchmem \
-  -count 5
-```
-
-To benchmark local checkouts with the same scan defaults:
-
-```bash
-LICENSES_BENCH_REPOS=/path/to/repo1:/path/to/repo2 \
-  go test ./cmd/licenses \
-  -run '^$' \
-  -bench '^BenchmarkScanRepositories$' \
-  -benchmem \
-  -count 5
-```
-
-Use the standard `go test` flags to select benchmarks or change their duration
-and sample count.
+See [docs/benchmarking.md](docs/benchmarking.md) for matcher, repository
+scanner, and Licensee comparison benchmarks.
 
 ## License
 
