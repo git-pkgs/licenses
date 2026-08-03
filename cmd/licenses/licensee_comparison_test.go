@@ -178,7 +178,7 @@ func compareLicenseResults(
 			continue
 		}
 		switch file.Matcher.Name {
-		case "exact", "reference":
+		case "exact", "dice", "copyright", "reference":
 			result.LicenseeText = append(result.LicenseeText, expression)
 		default:
 			result.LicenseeFields = append(result.LicenseeFields, expression)
@@ -252,18 +252,21 @@ func TestCompareLicenseResultsSeparatesLicenseeSources(t *testing.T) {
 	}}
 	exact := licenseeMatchedFile{MatchedLicense: "MIT"}
 	exact.Matcher.Name = "exact"
+	dice := licenseeMatchedFile{MatchedLicense: "BSD-3-Clause"}
+	dice.Matcher.Name = "dice"
 	declared := licenseeMatchedFile{MatchedLicense: "Apache-2.0"}
 	declared.Matcher.Name = "gemspec"
 	licensee := licenseeReport{
-		MatchedFiles: []licenseeMatchedFile{exact, declared},
+		MatchedFiles: []licenseeMatchedFile{exact, dice, declared},
 	}
 
 	got := compareLicenseResults(
 		ours,
 		licensee,
 		map[string]string{
-			"mit":        "mit",
-			"apache-2.0": "apache-2.0",
+			"mit":          "mit",
+			"apache-2.0":   "apache-2.0",
+			"bsd-3-clause": "bsd-new",
 		},
 	)
 	if !slices.Equal(got.ProjectText, []string{"mit"}) {
@@ -272,8 +275,8 @@ func TestCompareLicenseResultsSeparatesLicenseeSources(t *testing.T) {
 	if !slices.Equal(got.ProjectClues, []string{"ruby"}) {
 		t.Errorf("project clues = %v, want [ruby]", got.ProjectClues)
 	}
-	if !slices.Equal(got.LicenseeText, []string{"mit"}) {
-		t.Errorf("Licensee text = %v, want [mit]", got.LicenseeText)
+	if !slices.Equal(got.LicenseeText, []string{"bsd-new", "mit"}) {
+		t.Errorf("Licensee text = %v, want [bsd-new mit]", got.LicenseeText)
 	}
 	if !slices.Equal(got.LicenseeFields, []string{"apache-2.0"}) {
 		t.Errorf(
