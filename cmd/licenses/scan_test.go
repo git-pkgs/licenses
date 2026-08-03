@@ -123,6 +123,7 @@ func TestScanRepositoryDeclaredLicenses(t *testing.T) {
 		"name": "empty"
 	}`))
 	writeTestFile(t, filepath.Join(root, "malformed", "package.json"), []byte(`{`))
+	writeTestFile(t, filepath.Join(root, "malformed", "package-lock.json"), []byte(`{`))
 
 	report, err := scanRepository(
 		context.Background(),
@@ -165,6 +166,9 @@ func TestScanRepositoryDeclaredLicenses(t *testing.T) {
 	if len(report.Declared) != 0 && report.Declared[0].Raw == nil {
 		t.Error("license-file-only declaration encoded raw values as null, want an empty array")
 	}
+	if len(report.Errors) != 1 || report.Errors[0].Path != "malformed/package.json" {
+		t.Errorf("errors = %#v, want malformed package.json parse error", report.Errors)
+	}
 }
 
 func TestScanExplicitManifestDeclaredLicense(t *testing.T) {
@@ -185,6 +189,37 @@ func TestScanExplicitManifestDeclaredLicense(t *testing.T) {
 		!slices.Equal(report.Declared[0].Raw, []string{"ISC"}) ||
 		report.Declared[0].NormalizedExpression != "ISC" {
 		t.Errorf("declared = %#v, want explicit ISC declaration", report.Declared)
+	}
+}
+
+func TestScanExplicitMalformedManifestReportsError(t *testing.T) {
+	t.Parallel()
+
+	manifest := filepath.Join(t.TempDir(), "package.json")
+	writeTestFile(t, manifest, []byte(`{`))
+	report, err := scanRepository(
+		context.Background(),
+		newTestMatcher(t),
+		manifest,
+		defaultTestScanOptions(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Errors) != 1 || report.Errors[0].Path != "package.json" {
+		t.Errorf("errors = %#v, want explicit package.json parse error", report.Errors)
+	}
+}
+
+func TestDeclaredLicenseReadErrorAndLockfileGate(t *testing.T) {
+	t.Parallel()
+
+	missing := filepath.Join(t.TempDir(), "missing")
+	if _, ok, err := declaredLicense(missing, "package.json"); err == nil || ok {
+		t.Errorf("manifest result = ok %t, error %v; want read error", ok, err)
+	}
+	if _, ok, err := declaredLicense(missing, "package-lock.json"); err != nil || ok {
+		t.Errorf("lockfile result = ok %t, error %v; want ignored lockfile", ok, err)
 	}
 }
 
@@ -950,7 +985,7 @@ func TestScanFileEnforcesSizeAfterDiscovery(t *testing.T) {
 	options := defaultTestScanOptions()
 	options.MaxFileSize = 10
 	var summary scanSummary
-	tasks, _, _, _, err := discoverFiles(
+	discovery, err := discoverFiles(
 		context.Background(),
 		path,
 		options,
@@ -960,7 +995,12 @@ func TestScanFileEnforcesSizeAfterDiscovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeTestFile(t, path, []byte(strings.Repeat("large", 10)))
-	outcome := scanFile(context.Background(), nil, tasks[0], options.MaxFileSize)
+	outcome := scanFile(
+		context.Background(),
+		nil,
+		discovery.tasks[0],
+		options.MaxFileSize,
+	)
 	if !outcome.tooLarge {
 		t.Fatalf("outcome = %#v, want tooLarge", outcome)
 	}
@@ -1049,7 +1089,7 @@ func TestDiscoverFilesStopsAtLimit(t *testing.T) {
 		Workers:     1,
 	}
 	var summary scanSummary
-	tasks, _, scanErrors, skipped, err := discoverFiles(
+	discovery, err := discoverFiles(
 		context.Background(),
 		root,
 		options,
@@ -1058,14 +1098,14 @@ func TestDiscoverFilesStopsAtLimit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(scanErrors) != 0 {
-		t.Fatalf("errors = %#v, want none", scanErrors)
+	if len(discovery.scanErrors) != 0 {
+		t.Fatalf("errors = %#v, want none", discovery.scanErrors)
 	}
-	if len(skipped) != 0 {
-		t.Fatalf("skipped = %#v, want none", skipped)
+	if len(discovery.skipped) != 0 {
+		t.Fatalf("skipped = %#v, want none", discovery.skipped)
 	}
-	if len(tasks) != 2 {
-		t.Fatalf("tasks = %d, want 2", len(tasks))
+	if len(discovery.tasks) != 2 {
+		t.Fatalf("tasks = %d, want 2", len(discovery.tasks))
 	}
 	if !summary.Truncated {
 		t.Fatal("truncated = false, want true")
@@ -1087,7 +1127,7 @@ func TestDiscoverExplicitFile(t *testing.T) {
 		Workers:     1,
 	}
 	var summary scanSummary
-	tasks, _, scanErrors, skipped, err := discoverFiles(
+	discovery, err := discoverFiles(
 		context.Background(),
 		path,
 		options,
@@ -1096,14 +1136,14 @@ func TestDiscoverExplicitFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(scanErrors) != 0 {
-		t.Fatalf("errors = %#v, want none", scanErrors)
+	if len(discovery.scanErrors) != 0 {
+		t.Fatalf("errors = %#v, want none", discovery.scanErrors)
 	}
-	if len(skipped) != 0 {
-		t.Fatalf("skipped = %#v, want none", skipped)
+	if len(discovery.skipped) != 0 {
+		t.Fatalf("skipped = %#v, want none", discovery.skipped)
 	}
-	if len(tasks) != 1 || tasks[0].display != "NOTICE" {
-		t.Fatalf("tasks = %#v, want NOTICE", tasks)
+	if len(discovery.tasks) != 1 || discovery.tasks[0].display != "NOTICE" {
+		t.Fatalf("tasks = %#v, want NOTICE", discovery.tasks)
 	}
 }
 
