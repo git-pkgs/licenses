@@ -1,0 +1,216 @@
+name: licenses
+description: Scan a repository for licence text using ScanCode's rule corpus and fail on denied identifiers
+author: git-pkgs
+branding:
+  icon: file-text
+  color: blue
+
+inputs:
+  version:
+    description: Release version of licenses to install (without leading v), or "latest"
+    required: false
+    default: latest
+  path:
+    description: File or directory to scan
+    required: false
+    default: .
+  scope:
+    description: Scan scope (project or all)
+    required: false
+    default: project
+  max-files:
+    description: Maximum files to visit (required with scope all; 0 is unlimited)
+    required: false
+    default: ""
+  skip:
+    description: Additional directory names to skip, comma-separated
+    required: false
+    default: ""
+  deny:
+    description: Comma-separated licence identifiers; the job fails if any detected expression contains one
+    required: false
+    default: ""
+  allow:
+    description: Comma-separated licence identifiers; when set, the job fails on any expression containing an identifier not listed
+    required: false
+    default: ""
+  fail-on-no-detections:
+    description: Fail the job when the scan finds no conclusive detections
+    required: false
+    default: "false"
+
+outputs:
+  report:
+    description: Path to the JSON scan report
+    value: ${{ steps.scan.outputs.report }}
+  expressions:
+    description: Newline-separated list of detected expressions
+    value: ${{ steps.scan.outputs.expressions }}
+  denied:
+    description: Newline-separated list of expressions that matched the deny list or fell outside the allow list
+    value: ${{ steps.policy.outputs.denied }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install licenses
+      id: install
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        set -euo pipefail
+        case "${RUNNER_OS}" in
+          Linux)  os=linux ;;
+          macOS)  os=darwin ;;
+          *) echo "::error::unsupported runner OS ${RUNNER_OS}"; exit 1 ;;
+        esac
+        case "${RUNNER_ARCH}" in
+          X64)   arch=amd64 ;;
+          ARM64) arch=arm64 ;;
+          *) echo "::error::unsupported runner arch ${RUNNER_ARCH}"; exit 1 ;;
+        esac
+
+        if [ "${VERSION}" = "latest" ]; then
+          VERSION=$(gh api repos/git-pkgs/licenses/releases/latest --jq '.tag_name' | sed 's/^v//')
+        fi
+        VERSION=${VERSION#v}
+
+        dest="${RUNNER_TEMP}/licenses"
+        mkdir -p "${dest}"
+        asset="licenses_${VERSION}_${os}_${arch}.tar.gz"
+        gh release download "v${VERSION}" \
+          --repo git-pkgs/licenses \
+          --pattern "${asset}" \
+          --pattern checksums.txt \
+          --dir "${dest}" \
+          --clobber
+
+        want=$(awk -v a="${asset}" '$2 == a {print $1}' "${dest}/checksums.txt")
+        if [ -z "${want}" ]; then
+          echo "::error::no checksum for ${asset} in checksums.txt"
+          exit 1
+        fi
+        got=$(sha256sum "${dest}/${asset}" | awk '{print $1}')
+        if [ "${want}" != "${got}" ]; then
+          echo "::error::checksum mismatch for ${asset}: want ${want}, got ${got}"
+          exit 1
+        fi
+
+        tar -xzf "${dest}/${asset}" -C "${dest}"
+        echo "${dest}" >> "${GITHUB_PATH}"
+        "${dest}/licenses" -version
+
+    - name: Scan
+      id: scan
+      shell: bash
+      env:
+        SCAN_PATH: ${{ inputs.path }}
+        SCOPE: ${{ inputs.scope }}
+        MAX_FILES: ${{ inputs.max-files }}
+        SKIP: ${{ inputs.skip }}
+      run: |
+        set -euo pipefail
+        report="${RUNNER_TEMP}/licenses-report.json"
+        args=(-json -scope "${SCOPE}")
+        if [ -n "${MAX_FILES}" ]; then
+          args+=(-max-files "${MAX_FILES}")
+        fi
+        if [ -n "${SKIP}" ]; then
+          args+=(-skip "${SKIP}")
+        fi
+        set +e
+        licenses "${args[@]}" "${SCAN_PATH}" > "${report}"
+        code=$?
+        set -e
+        if [ "${code}" -eq 1 ]; then
+          echo "::error::licenses exited with a fatal error"
+          exit 1
+        fi
+        echo "report=${report}" >> "${GITHUB_OUTPUT}"
+        echo "exit-code=${code}" >> "${GITHUB_OUTPUT}"
+        {
+          echo 'expressions<<LICENSES_EOF'
+          jq -r '.expressions[].expression' "${report}"
+          echo 'LICENSES_EOF'
+        } >> "${GITHUB_OUTPUT}"
+
+    - name: Policy
+      id: policy
+      shell: bash
+      env:
+        REPORT: ${{ steps.scan.outputs.report }}
+        DENY: ${{ inputs.deny }}
+        ALLOW: ${{ inputs.allow }}
+      run: |
+        set -euo pipefail
+        denied=$(jq -r --arg deny "${DENY}" --arg allow "${ALLOW}" '
+          def ids: ascii_downcase | gsub("[()]"; " ")
+            | split(" ") | map(select(. != "" and . != "and" and . != "or" and . != "with"));
+          def list($s): $s | ascii_downcase | split(",") | map(gsub("^\\s+|\\s+$"; "")) | map(select(. != ""));
+          (list($deny)) as $d
+          | (list($allow)) as $a
+          | .expressions[]
+          | . as $e
+          | ($e.expression | ids) as $i
+          | select(
+              (($d | length) > 0 and ($i | any(. as $x | $d | index($x))))
+              or
+              (($a | length) > 0 and ($i | any(. as $x | ($a | index($x)) | not)))
+            )
+          | $e.expression
+        ' "${REPORT}")
+        {
+          echo 'denied<<LICENSES_EOF'
+          printf '%s\n' "${denied}"
+          echo 'LICENSES_EOF'
+        } >> "${GITHUB_OUTPUT}"
+
+        if [ -n "${denied}" ]; then
+          while IFS= read -r expr; do
+            [ -z "${expr}" ] && continue
+            jq -r --arg e "${expr}" '
+              .files[] | select(.detections[]?.expression == $e) | .path
+            ' "${REPORT}" | sort -u | while IFS= read -r path; do
+              echo "::error file=${path}::licence expression \"${expr}\" is denied by policy"
+            done
+          done <<< "${denied}"
+        fi
+
+    - name: Summary
+      shell: bash
+      env:
+        REPORT: ${{ steps.scan.outputs.report }}
+        DENIED: ${{ steps.policy.outputs.denied }}
+      run: |
+        set -euo pipefail
+        {
+          echo '### licenses'
+          echo
+          jq -r '.summary | "Scanned \(.files_scanned) of \(.files_visited) files; \(.files_with_detections) with detections."' "${REPORT}"
+          echo
+          echo '| expression | identification | files | matches |'
+          echo '|---|---|---|---|'
+          jq -r '.expressions | sort_by(-.files) | .[] | "| `\(.expression)` | \(.identification) | \(.files) | \(.matches) |"' "${REPORT}"
+          if [ -n "${DENIED}" ]; then
+            echo
+            echo '#### Denied'
+            echo
+            printf '%s\n' "${DENIED}" | sed '/^$/d;s/^/- `/;s/$/`/'
+          fi
+        } >> "${GITHUB_STEP_SUMMARY}"
+
+    - name: Fail on policy
+      if: steps.policy.outputs.denied != ''
+      shell: bash
+      run: |
+        echo "::error::one or more detected licence expressions are denied by policy"
+        exit 1
+
+    - name: Fail on no detections
+      if: inputs.fail-on-no-detections == 'true' && steps.scan.outputs.exit-code == '3'
+      shell: bash
+      run: |
+        echo "::error::no conclusive licence detections"
+        exit 1

@@ -1,0 +1,67 @@
+name: Action
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  self-test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Run action against this repository
+        id: scan
+        uses: ./
+        with:
+          path: .
+
+      - name: Assert MIT was detected
+        shell: bash
+        env:
+          EXPRESSIONS: ${{ steps.scan.outputs.expressions }}
+        run: |
+          printf '%s\n' "${EXPRESSIONS}"
+          printf '%s\n' "${EXPRESSIONS}" | grep -qx 'mit'
+
+      - name: Assert report exists
+        shell: bash
+        env:
+          REPORT: ${{ steps.scan.outputs.report }}
+        run: |
+          test -s "${REPORT}"
+          jq -e '.schema == 1' "${REPORT}"
+
+  deny-fails:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Run action with a deny that matches
+        id: scan
+        uses: ./
+        continue-on-error: true
+        with:
+          path: .
+          deny: mit
+
+      - name: Assert the deny step failed
+        shell: bash
+        run: |
+          if [ "${{ steps.scan.outcome }}" != "failure" ]; then
+            echo "::error::expected the action to fail when a denied identifier is present"
+            exit 1
+          fi
