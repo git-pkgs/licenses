@@ -464,7 +464,13 @@ func runConformanceCases(
 }
 
 func scanCodeExpression(index spdxIndex, raw string) string {
-	return rewriteExpressionIdentifiers(raw, index.resolve)
+	return rewriteExpressionIdentifiers(raw, func(identifier string) string {
+		resolved, ok := index.resolve(identifier)
+		if !ok {
+			return unknownSPDXKey
+		}
+		return resolved
+	})
 }
 
 func rawExactExpressions(engine *matchEngine, input []byte) []string {

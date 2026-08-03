@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/git-pkgs/licenses/internal/corpus"
+	"github.com/git-pkgs/spdx"
 )
 
 func TestMatcherSPDXTags(t *testing.T) {
@@ -219,6 +220,28 @@ func TestMatcherSPDXTagsNoMatch(t *testing.T) {
 	}
 }
 
+func TestMatcherSPDXTagIdentifierListSkew(t *testing.T) {
+	t.Parallel()
+
+	const (
+		identifier  = "Verbatim-man-pages"
+		reportingID = "Linux-man-pages-copyleft"
+	)
+	if _, err := spdx.ParseStrict(identifier); err == nil {
+		t.Fatalf("ParseStrict(%q) succeeded; test requires identifier-list skew", identifier)
+	}
+
+	matcher := testSPDXMatcher(t)
+	input := "SPDX-License-Identifier: " + identifier
+	match, ok := findSPDXMatch(t, matcher, input, reportingID)
+	if !ok {
+		return
+	}
+	if match.Start != 0 || match.End != len(input) {
+		t.Errorf("span = [%d, %d), want [0, %d)", match.Start, match.End, len(input))
+	}
+}
+
 func TestMatcherSPDXTagsMultiple(t *testing.T) {
 	t.Parallel()
 
@@ -356,6 +379,7 @@ func TestSPDXNormalizeExpression(t *testing.T) {
 			"gpl-2.0":                 "gpl-2.0",
 			"gpl-2.0+":                "gpl-2.0-plus",
 			"classpath-exception-2.0": "classpath-exception-2.0",
+			"verbatim-man-pages":      "verbatim-manual",
 		},
 		reportingIDs: map[string]string{
 			"mit":                     "MIT",
@@ -364,6 +388,7 @@ func TestSPDXNormalizeExpression(t *testing.T) {
 			"gpl-2.0":                 "GPL-2.0-only",
 			"gpl-2.0-plus":            "GPL-2.0-or-later",
 			"classpath-exception-2.0": "Classpath-exception-2.0",
+			"verbatim-manual":         "Linux-man-pages-copyleft",
 			"unknown-spdx":            "LicenseRef-scancode-unknown-spdx",
 		},
 	}
@@ -416,8 +441,15 @@ func TestSPDXNormalizeExpression(t *testing.T) {
 			ids:         []string{"LicenseRef-scancode-unknown-spdx"},
 			scanCodeIDs: []string{"unknown-spdx"},
 		},
+		{
+			input:       "Verbatim-man-pages",
+			expression:  "Linux-man-pages-copyleft",
+			ids:         []string{"Linux-man-pages-copyleft"},
+			scanCodeIDs: []string{"verbatim-manual"},
+		},
 		{input: "", expression: ""},
 		{input: "unrecognised", expression: ""},
+		{input: "MIT OR unrecognised", expression: ""},
 		{input: "AND OR", expression: ""},
 		{input: "MIT AND", expression: ""},
 		{input: "(MIT OR Apache-2.0", expression: ""},
@@ -477,7 +509,13 @@ func TestSPDXExpressionReporting(t *testing.T) {
 	if !slices.Equal(ids, wantIDs) {
 		t.Fatalf("reported IDs = %v, want %v", ids, wantIDs)
 	}
-	got := rewriteExpressionIdentifiers(expression, index.resolve)
+	got := rewriteExpressionIdentifiers(expression, func(identifier string) string {
+		resolved, ok := index.resolve(identifier)
+		if !ok {
+			t.Fatalf("resolve(%q) failed", identifier)
+		}
+		return resolved
+	})
 	if got != scanCode {
 		t.Fatalf("ScanCode expression = %q, want %q", got, scanCode)
 	}
@@ -517,18 +555,36 @@ func TestBuildSPDXIndex(t *testing.T) {
 	tests := []struct {
 		identifier string
 		want       string
+		ok         bool
 	}{
-		{identifier: "MIT", want: "mit"},
-		{identifier: "BSD-3-Clause", want: "bsd-new"},
-		{identifier: "gpl-2.0", want: "gpl-2.0"},
-		{identifier: "classpath-exception-2.0", want: "classpath-exception-2.0"},
-		{identifier: "LicenseRef-scancode-mit", want: "mit"},
-		{identifier: "LicenseRef-proprietary", want: "unknown-spdx"},
-		{identifier: "unrecognised", want: "unknown-spdx"},
+		{identifier: "MIT", want: "mit", ok: true},
+		{identifier: "BSD-3-Clause", want: "bsd-new", ok: true},
+		{identifier: "gpl-2.0", want: "gpl-2.0", ok: true},
+		{
+			identifier: "classpath-exception-2.0",
+			want:       "classpath-exception-2.0",
+			ok:         true,
+		},
+		{identifier: "LicenseRef-scancode-mit", want: "mit", ok: true},
+		{identifier: "LicenseRef-proprietary", want: "unknown-spdx", ok: true},
+		{
+			identifier: "DocumentRef-vendor:LicenseRef-custom",
+			want:       "unknown-spdx",
+			ok:         true,
+		},
+		{identifier: "unrecognised"},
 	}
 	for _, test := range tests {
-		if got := index.resolve(test.identifier); got != test.want {
-			t.Errorf("resolve(%q) = %q, want %q", test.identifier, got, test.want)
+		got, ok := index.resolve(test.identifier)
+		if got != test.want || ok != test.ok {
+			t.Errorf(
+				"resolve(%q) = %q, %v; want %q, %v",
+				test.identifier,
+				got,
+				ok,
+				test.want,
+				test.ok,
+			)
 		}
 	}
 }
@@ -552,8 +608,9 @@ func TestEmbeddedCorpusResolvesCommonSPDXIdentifiers(t *testing.T) {
 		"MPL-2.0":          "mpl-2.0",
 	}
 	for spdx, want := range tests {
-		if got := matcher.engine.spdx.resolve(spdx); got != want {
-			t.Errorf("resolve(%q) = %q, want %q", spdx, got, want)
+		got, ok := matcher.engine.spdx.resolve(spdx)
+		if got != want || !ok {
+			t.Errorf("resolve(%q) = %q, %v; want %q, true", spdx, got, ok, want)
 		}
 	}
 }
