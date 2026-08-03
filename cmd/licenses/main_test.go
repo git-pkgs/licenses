@@ -79,6 +79,16 @@ func TestRunJSON(t *testing.T) {
 	if len(report.Files) != 1 || !hasMITExpression(report.Files[0]) {
 		t.Fatalf("files = %#v, want MIT detection", report.Files)
 	}
+	if report.Files[0].LicenseTextCoverage <= 0 ||
+		report.Files[0].LicenseTextCoverage > 100 {
+		t.Errorf(
+			"license text coverage = %v, want within (0, 100]",
+			report.Files[0].LicenseTextCoverage,
+		)
+	}
+	if !strings.Contains(stdout.String(), `"license_text_coverage":`) {
+		t.Errorf("JSON does not contain license_text_coverage:\n%s", stdout.String())
+	}
 	if report.Files[0].Detections[0].Identification != licenses.Identified {
 		t.Errorf(
 			"detection identification = %q, want %q",
