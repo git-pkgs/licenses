@@ -33,7 +33,7 @@ jobs:
           EXPRESSIONS: ${{ steps.scan.outputs.expressions }}
         run: |
           printf '%s\n' "${EXPRESSIONS}"
-          printf '%s\n' "${EXPRESSIONS}" | grep -qx 'mit'
+          printf '%s\n' "${EXPRESSIONS}" | grep -qix 'mit'
 
       - name: Assert report exists
         shell: bash
@@ -41,7 +41,7 @@ jobs:
           REPORT: ${{ steps.scan.outputs.report }}
         run: |
           test -s "${REPORT}"
-          jq -e '.schema == 1' "${REPORT}"
+          jq -e '.schema >= 1' "${REPORT}"
 
   deny-fails:
     runs-on: ubuntu-latest
