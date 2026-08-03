@@ -71,6 +71,12 @@ both concrete identifiers and ScanCode placeholder `LicenseRef-*` values.
 `NOASSERTION` detections confirm license-related text without naming another
 license identifier.
 
+JSON reports include a `declared` record for each recognized package manifest
+that declares licence values or a licence-file path. Each record preserves the
+raw manifest values and includes a normalized SPDX expression when all values
+can be normalized. Multiple values are joined with `OR`; values that cannot be
+normalized remain available in `raw` with an empty `normalized_expression`.
+
 Reported expressions use canonical SPDX identifiers when ScanCode supplies
 one. Other ScanCode license keys use `LicenseRef-scancode-<key>`. ScanCode rule
 IDs remain in each match for traceability.

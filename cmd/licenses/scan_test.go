@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"unicode/utf16"
@@ -93,6 +94,97 @@ func TestScanRepository(t *testing.T) {
 	}
 	if report.Corpus.RuleCount == 0 || report.Corpus.SourceCommit == "" {
 		t.Errorf("corpus = %#v, want populated metadata", report.Corpus)
+	}
+}
+
+func TestScanRepositoryDeclaredLicenses(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeTestFile(t, filepath.Join(root, "package.json"), []byte(`{
+		"name": "single",
+		"license": "MIT License"
+	}`))
+	writeTestFile(t, filepath.Join(root, "nested", "composer.json"), []byte(`{
+		"name": "example/multiple",
+		"license": ["Apache-2.0", "MIT"]
+	}`))
+	writeTestFile(t, filepath.Join(root, "cargo", "Cargo.toml"), []byte(`
+		[package]
+		name = "license-file"
+		version = "1.0.0"
+		license-file = "LICENSE.custom"
+	`))
+	writeTestFile(t, filepath.Join(root, "invalid", "package.json"), []byte(`{
+		"name": "invalid",
+		"license": "not-a-real-license"
+	}`))
+	writeTestFile(t, filepath.Join(root, "empty", "package.json"), []byte(`{
+		"name": "empty"
+	}`))
+	writeTestFile(t, filepath.Join(root, "malformed", "package.json"), []byte(`{`))
+
+	report, err := scanRepository(
+		context.Background(),
+		newTestMatcher(t),
+		root,
+		defaultTestScanOptions(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []declaredRecord{
+		{
+			Path:        "cargo/Cargo.toml",
+			Raw:         []string{},
+			LicenseFile: "LICENSE.custom",
+		},
+		{
+			Path: "invalid/package.json",
+			Raw:  []string{"not-a-real-license"},
+		},
+		{
+			Path:                 "nested/composer.json",
+			Raw:                  []string{"Apache-2.0", "MIT"},
+			NormalizedExpression: "Apache-2.0 OR MIT",
+		},
+		{
+			Path:                 "package.json",
+			Raw:                  []string{"MIT License"},
+			NormalizedExpression: "MIT",
+		},
+	}
+	if !slices.EqualFunc(report.Declared, want, func(got, expected declaredRecord) bool {
+		return got.Path == expected.Path &&
+			slices.Equal(got.Raw, expected.Raw) &&
+			got.LicenseFile == expected.LicenseFile &&
+			got.NormalizedExpression == expected.NormalizedExpression
+	}) {
+		t.Errorf("declared = %#v, want %#v", report.Declared, want)
+	}
+	if len(report.Declared) != 0 && report.Declared[0].Raw == nil {
+		t.Error("license-file-only declaration encoded raw values as null, want an empty array")
+	}
+}
+
+func TestScanExplicitManifestDeclaredLicense(t *testing.T) {
+	t.Parallel()
+
+	manifest := filepath.Join(t.TempDir(), "package.json")
+	writeTestFile(t, manifest, []byte(`{"name":"explicit","license":"ISC"}`))
+	report, err := scanRepository(
+		context.Background(),
+		newTestMatcher(t),
+		manifest,
+		defaultTestScanOptions(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Declared) != 1 || report.Declared[0].Path != "package.json" ||
+		!slices.Equal(report.Declared[0].Raw, []string{"ISC"}) ||
+		report.Declared[0].NormalizedExpression != "ISC" {
+		t.Errorf("declared = %#v, want explicit ISC declaration", report.Declared)
 	}
 }
 
@@ -858,7 +950,7 @@ func TestScanFileEnforcesSizeAfterDiscovery(t *testing.T) {
 	options := defaultTestScanOptions()
 	options.MaxFileSize = 10
 	var summary scanSummary
-	tasks, _, _, err := discoverFiles(
+	tasks, _, _, _, err := discoverFiles(
 		context.Background(),
 		path,
 		options,
@@ -957,7 +1049,7 @@ func TestDiscoverFilesStopsAtLimit(t *testing.T) {
 		Workers:     1,
 	}
 	var summary scanSummary
-	tasks, scanErrors, skipped, err := discoverFiles(
+	tasks, _, scanErrors, skipped, err := discoverFiles(
 		context.Background(),
 		root,
 		options,
@@ -995,7 +1087,7 @@ func TestDiscoverExplicitFile(t *testing.T) {
 		Workers:     1,
 	}
 	var summary scanSummary
-	tasks, scanErrors, skipped, err := discoverFiles(
+	tasks, _, scanErrors, skipped, err := discoverFiles(
 		context.Background(),
 		path,
 		options,
