@@ -11,6 +11,7 @@ import (
 
 const (
 	spdxTagRuleID            = "spdx-license-identifier"
+	licenseRefScancode       = "LicenseRef-scancode-"
 	licenseRefScancodePrefix = "licenseref-scancode-"
 	unknownSPDXKey           = "unknown-spdx"
 	maxSPDXExpressionBytes   = 1024
@@ -23,10 +24,11 @@ var spdxTags = []string{
 	"spdx-license-identifer",
 }
 
-// spdxIndex maps lowercase SPDX identifiers and ScanCode license keys to the
-// ScanCode key used in rule expressions.
+// spdxIndex maps SPDX identifiers to the ScanCode keys used for matching, and
+// ScanCode keys to the SPDX-compatible identifiers used in public results.
 type spdxIndex struct {
-	keys map[string]string
+	keys         map[string]string
+	reportingIDs map[string]string
 }
 
 // buildSPDXIndex constructs the SPDX identifier map. SPDXKeys from the corpus
@@ -37,6 +39,10 @@ func buildSPDXIndex(index corpus.Index) spdxIndex {
 	for spdx, scancode := range index.SPDXKeys {
 		keys[spdx] = scancode
 	}
+	reportingIDs := make(map[string]string, len(index.ReportingIDs))
+	for scancode, identifier := range index.ReportingIDs {
+		reportingIDs[strings.ToLower(scancode)] = identifier
+	}
 	for _, rule := range index.Rules {
 		if rule.Flags&corpus.FlagFalsePositive != 0 {
 			continue
@@ -46,9 +52,12 @@ func buildSPDXIndex(index corpus.Index) spdxIndex {
 			if _, exists := keys[lower]; !exists {
 				keys[lower] = lower
 			}
+			if _, exists := reportingIDs[lower]; !exists {
+				reportingIDs[lower] = licenseRefScancode + lower
+			}
 		}
 	}
-	return spdxIndex{keys: keys}
+	return spdxIndex{keys: keys, reportingIDs: reportingIDs}
 }
 
 // resolve returns the ScanCode key for an SPDX identifier token.
@@ -63,6 +72,30 @@ func (index spdxIndex) resolve(identifier string) string {
 		}
 	}
 	return unknownSPDXKey
+}
+
+// report returns the canonical SPDX identifier for a ScanCode key, falling
+// back to ScanCode's LicenseRef namespace when the key has no mapping.
+func (index spdxIndex) report(identifier string) string {
+	lower := strings.ToLower(identifier)
+	if reportingID, ok := index.reportingIDs[lower]; ok {
+		return reportingID
+	}
+	return licenseRefScancode + lower
+}
+
+// reportExpression rewrites the ScanCode keys in expression to their public
+// SPDX identifiers and returns the distinct identifiers in encounter order.
+func (index spdxIndex) reportExpression(expression string) (string, []string) {
+	var identifiers []string
+	rewritten := rewriteExpressionIdentifiers(expression, func(identifier string) string {
+		reportingID := index.report(identifier)
+		if !slices.Contains(identifiers, reportingID) {
+			identifiers = append(identifiers, reportingID)
+		}
+		return reportingID
+	})
+	return rewritten, identifiers
 }
 
 // matchSPDXTags scans input for SPDX-License-Identifier tags and appends a
@@ -89,7 +122,7 @@ func (m *Matcher) matchSPDXTags(input []byte, result *Result) {
 		if resultOverlapsSpan(result, anchor, expressionEnd) {
 			continue
 		}
-		expression, identifiers := m.engine.spdx.normalizeExpression(
+		expression, identifiers, scanCodeIDs := m.engine.spdx.normalizeExpression(
 			input[expressionStart:expressionEnd],
 		)
 		if expression == "" {
@@ -108,7 +141,7 @@ func (m *Matcher) matchSPDXTags(input []byte, result *Result) {
 		if m.matchedText {
 			match.Matched = slices.Clone(input[anchor:expressionEnd])
 		}
-		addDetection(result, expression, identificationForIDs(identifiers), match)
+		addDetection(result, expression, identificationForIDs(scanCodeIDs), match)
 	}
 }
 
@@ -208,26 +241,31 @@ func spdxExpressionSpan(input []byte, from int) (int, int) {
 }
 
 // normalizeExpression parses raw SPDX expression bytes and returns the
-// expression rewritten with ScanCode keys plus its distinct identifiers.
-func (index spdxIndex) normalizeExpression(raw []byte) (string, []string) {
+// expression rewritten with canonical SPDX identifiers, along with its public
+// identifiers and the ScanCode keys used to classify the result.
+func (index spdxIndex) normalizeExpression(raw []byte) (string, []string, []string) {
 	expression, err := spdx.ParseStrict(string(raw))
 	if err != nil {
-		return "", nil
+		return "", nil, nil
 	}
 	foldSPDXPlusModifiers(expression)
 
-	var identifiers []string
+	var identifiers, scanCodeIDs []string
 	rewritten := spdx.RewriteIdentifiers(expression, func(identifier string) string {
 		key := index.resolve(identifier)
-		if !slices.Contains(identifiers, key) {
-			identifiers = append(identifiers, key)
+		if !slices.Contains(scanCodeIDs, key) {
+			scanCodeIDs = append(scanCodeIDs, key)
 		}
-		return key
+		reportingID := index.report(key)
+		if !slices.Contains(identifiers, reportingID) {
+			identifiers = append(identifiers, reportingID)
+		}
+		return reportingID
 	})
 	if len(identifiers) == 0 {
-		return "", nil
+		return "", nil, nil
 	}
-	return rewritten, identifiers
+	return rewritten, identifiers, scanCodeIDs
 }
 
 // foldSPDXPlusModifiers lets the corpus resolve deprecated SPDX aliases such

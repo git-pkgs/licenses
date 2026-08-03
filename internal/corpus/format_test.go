@@ -46,6 +46,10 @@ func TestRoundTrip(t *testing.T) {
 			"apache-2.0":   "apache-2.0",
 			"bsd-3-clause": "bsd-new",
 		},
+		ReportingIDs: map[string]string{
+			"apache-2.0": "Apache-2.0",
+			"bsd-new":    "BSD-3-Clause",
+		},
 	}
 
 	var first bytes.Buffer
@@ -87,6 +91,11 @@ func TestRoundTrip(t *testing.T) {
 		got.SPDXKeys["apache-2.0"] != "apache-2.0" ||
 		got.SPDXKeys["bsd-3-clause"] != "bsd-new" {
 		t.Fatalf("spdx keys = %#v", got.SPDXKeys)
+	}
+	if len(got.ReportingIDs) != 2 ||
+		got.ReportingIDs["apache-2.0"] != "Apache-2.0" ||
+		got.ReportingIDs["bsd-new"] != "BSD-3-Clause" {
+		t.Fatalf("reporting IDs = %#v", got.ReportingIDs)
 	}
 }
 

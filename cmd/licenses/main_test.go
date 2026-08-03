@@ -282,7 +282,7 @@ func TestReportExitCode(t *testing.T) {
 		{
 			name: "detections",
 			report: scanReport{Expressions: []expressionRecord{{
-				Expression: "mit",
+				Expression: "MIT",
 			}}},
 			want: exitSuccess,
 		},
@@ -333,7 +333,7 @@ func TestRunHuman(t *testing.T) {
 	}
 	for _, want := range []string{
 		"Detected expressions:",
-		"mit:",
+		"MIT:",
 		"mit.LICENSE",
 		"Scanned 1/1 files",
 	} {

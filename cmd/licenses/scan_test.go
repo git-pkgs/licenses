@@ -88,7 +88,7 @@ func TestScanRepository(t *testing.T) {
 	if !hasMITExpression(report.Files[0]) {
 		t.Errorf("LICENSE detections = %#v, want mit", report.Files[0].Detections)
 	}
-	if !hasExpressionRecord(report.Expressions, "mit") {
+	if !hasExpressionRecord(report.Expressions, "MIT") {
 		t.Errorf("expressions = %#v, want mit", report.Expressions)
 	}
 	if report.Corpus.RuleCount == 0 || report.Corpus.SourceCommit == "" {
@@ -141,17 +141,17 @@ func TestIdentificationRecordsAndSummary(t *testing.T) {
 
 	file := fileRecord{Detections: []detectionRecord{
 		{
-			Expression:     "mit",
+			Expression:     "MIT",
 			Identification: licenses.Identified,
 			Matches:        []matchRecord{{RuleID: "mit.RULE"}},
 		},
 		{
-			Expression:     "mit AND free-unknown",
+			Expression:     "MIT AND LicenseRef-scancode-free-unknown",
 			Identification: licenses.Partial,
 			Matches:        []matchRecord{{RuleID: "partial.RULE"}},
 		},
 		{
-			Expression:     "unknown-license-reference",
+			Expression:     "LicenseRef-scancode-unknown-license-reference",
 			Identification: licenses.NoAssertion,
 			Matches:        []matchRecord{{RuleID: "unknown.RULE"}},
 		},
@@ -267,10 +267,10 @@ func TestScanRepositoryAllScopeIncludesDefaultSkips(t *testing.T) {
 	}
 	foundMIT := false
 	for _, record := range report.Expressions {
-		if record.Expression == "mit" && record.Files != 2 {
+		if record.Expression == "MIT" && record.Files != 2 {
 			t.Errorf("MIT files = %d, want 2", record.Files)
 		}
-		if record.Expression == "mit" {
+		if record.Expression == "MIT" {
 			foundMIT = true
 		}
 	}
@@ -445,10 +445,10 @@ func TestScanRepositoryDemotesReferenceAcrossMarkdownBlocks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if hasExpressionRecord(report.Expressions, "ruby") {
+	if hasExpressionRecord(report.Expressions, "Ruby") {
 		t.Errorf("expressions = %#v, do not want ruby", report.Expressions)
 	}
-	if !hasExpressionRecord(report.Expressions, "apache-2.0") {
+	if !hasExpressionRecord(report.Expressions, "Apache-2.0") {
 		t.Errorf("expressions = %#v, want apache-2.0", report.Expressions)
 	}
 	if len(report.Files) != 1 {
@@ -490,10 +490,10 @@ func TestScanRepositoryDemotesReferenceAcrossMarkdownTableRows(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if hasExpressionRecord(report.Expressions, "ruby") {
+	if hasExpressionRecord(report.Expressions, "Ruby") {
 		t.Errorf("expressions = %#v, do not want ruby", report.Expressions)
 	}
-	if !hasExpressionRecord(report.Expressions, "mit") {
+	if !hasExpressionRecord(report.Expressions, "MIT") {
 		t.Errorf("expressions = %#v, want mit", report.Expressions)
 	}
 	if len(report.Files) != 1 {
@@ -532,12 +532,12 @@ func TestScanRepositoryKeepsRubyAlternativeWithinMarkdownBlock(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, expression := range []string{"ruby", "bsd-simplified"} {
+	for _, expression := range []string{"Ruby", "BSD-2-Clause"} {
 		if !hasExpressionRecord(report.Expressions, expression) {
 			t.Errorf("expressions = %#v, want %s", report.Expressions, expression)
 		}
 	}
-	if hasExpressionRecord(report.Expressions, "mit") {
+	if hasExpressionRecord(report.Expressions, "MIT") {
 		t.Errorf("expressions = %#v, do not want mit", report.Expressions)
 	}
 	if len(report.Files) != 1 {
@@ -696,7 +696,7 @@ func TestApplyScanPolicy(t *testing.T) {
 			start := strings.Index(test.text, "Ruby")
 			end := strings.LastIndex(test.text, "License") + len("License")
 			result := licenses.Result{Detections: []licenses.Detection{{
-				Expression: "ruby",
+				Expression: "Ruby",
 				Matches: []licenses.Match{{
 					RuleID:  "ruby.RULE",
 					Kind:    kind,
@@ -739,7 +739,7 @@ func TestScanRepositoryKeepsReferenceInExplicitLicensesFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !hasExpressionRecord(report.Expressions, "ruby") {
+	if !hasExpressionRecord(report.Expressions, "Ruby") {
 		t.Errorf("expressions = %#v, want ruby", report.Expressions)
 	}
 	if len(report.Files) != 1 || report.Files[0].Path != "component.txt" {
@@ -1152,7 +1152,7 @@ func writeTestFile(t *testing.T, path string, data []byte) {
 
 func hasMITExpression(file fileRecord) bool {
 	for _, detection := range file.Detections {
-		if detection.Expression == "mit" {
+		if detection.Expression == "MIT" {
 			return true
 		}
 	}

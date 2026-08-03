@@ -23,7 +23,7 @@ import (
 )
 
 const (
-	reportSchemaVersion     = 1
+	reportSchemaVersion     = 2
 	defaultMaxDepth         = 32
 	defaultMaxFiles         = 10_000
 	defaultMaxFileSize      = 1 << 20

@@ -75,7 +75,8 @@ type Result struct {
 
 // Detection groups matches that state the same license expression.
 type Detection struct {
-	// Expression is copied exactly from the ScanCode rule.
+	// Expression uses canonical SPDX identifiers where available and
+	// LicenseRef-scancode-* identifiers for other ScanCode license keys.
 	Expression string
 	// Identification is derived from the identifiers in Expression.
 	Identification Identification
@@ -87,7 +88,7 @@ type Detection struct {
 type Match struct {
 	// RuleID is the ScanCode rule identifier.
 	RuleID string
-	// LicenseIDs contains identifiers copied from the rule expression.
+	// LicenseIDs contains the SPDX-compatible identifiers in the expression.
 	LicenseIDs []string
 	// Kind identifies the ScanCode category of the matched rule.
 	Kind Kind
@@ -147,6 +148,7 @@ type matchEngine struct {
 }
 
 type expressionMetadata struct {
+	expression     string
 	licenseIDs     []string
 	identification Identification
 }
@@ -191,18 +193,21 @@ func newMatchEngine(index corpus.Index) (*matchEngine, error) {
 		return nil, err
 	}
 	hashes := make(map[uint64][]uint32, len(index.Rules))
+	spdxIndex := buildSPDXIndex(index)
 	metadataIndexes := make(map[string]uint32)
 	ruleMetadata := make([]uint32, len(index.Rules))
 	var metadata []expressionMetadata
 	for ruleIndex, rule := range index.Rules {
 		metadataIndex, exists := metadataIndexes[rule.Expression]
 		if !exists {
-			identifiers := expressionIDs(rule.Expression)
+			scanCodeIDs := expressionIDs(rule.Expression)
+			expression, identifiers := spdxIndex.reportExpression(rule.Expression)
 			metadataIndex = uint32(len(metadata))
 			metadataIndexes[rule.Expression] = metadataIndex
 			metadata = append(metadata, expressionMetadata{
+				expression:     expression,
 				licenseIDs:     identifiers,
-				identification: identificationForIDs(identifiers),
+				identification: identificationForIDs(scanCodeIDs),
 			})
 		}
 		ruleMetadata[ruleIndex] = metadataIndex
@@ -224,7 +229,7 @@ func newMatchEngine(index corpus.Index) (*matchEngine, error) {
 		expressionMetadata:     metadata,
 		automaton:              index.Automaton,
 		hashes:                 hashes,
-		spdx:                   buildSPDXIndex(index),
+		spdx:                   spdxIndex,
 	}, nil
 }
 
@@ -269,6 +274,7 @@ func (m *Matcher) match(ctx context.Context, b []byte, filters exactFilterOption
 		addMatch(
 			&result,
 			rule,
+			metadata.expression,
 			metadata.identification,
 			m.makeMatch(b, rule, metadata, candidate.method, start, end),
 		)
@@ -444,6 +450,7 @@ func ruleKind(flags uint16) Kind {
 func addMatch(
 	result *Result,
 	rule corpus.Rule,
+	expression string,
 	identification Identification,
 	match Match,
 ) {
@@ -451,7 +458,7 @@ func addMatch(
 		result.Clues = append(result.Clues, match)
 		return
 	}
-	addDetection(result, rule.Expression, identification, match)
+	addDetection(result, expression, identification, match)
 }
 
 func addDetection(
@@ -518,21 +525,47 @@ func isPlaceholderIdentifier(identifier string) bool {
 }
 
 func expressionIDs(expression string) []string {
-	fields := strings.FieldsFunc(expression, func(character rune) bool {
-		return character == '(' || character == ')' || character == ' ' ||
-			character == '\t' || character == '\r' || character == '\n'
+	var identifiers []string
+	rewriteExpressionIdentifiers(expression, func(identifier string) string {
+		if !slices.Contains(identifiers, identifier) {
+			identifiers = append(identifiers, identifier)
+		}
+		return identifier
 	})
-	ids := make([]string, 0, len(fields))
-	for _, field := range fields {
-		switch strings.ToUpper(field) {
-		case "AND", "OR", "WITH":
+	return identifiers
+}
+
+func rewriteExpressionIdentifiers(
+	expression string,
+	rewrite func(string) string,
+) string {
+	var result strings.Builder
+	result.Grow(len(expression))
+	for offset := 0; offset < len(expression); {
+		if isExpressionSeparator(expression[offset]) {
+			result.WriteByte(expression[offset])
+			offset++
 			continue
 		}
-		if !slices.Contains(ids, field) {
-			ids = append(ids, field)
+		end := offset + 1
+		for end < len(expression) && !isExpressionSeparator(expression[end]) {
+			end++
 		}
+		token := expression[offset:end]
+		switch strings.ToUpper(token) {
+		case "AND", "OR", "WITH":
+			result.WriteString(token)
+		default:
+			result.WriteString(rewrite(token))
+		}
+		offset = end
 	}
-	return ids
+	return result.String()
+}
+
+func isExpressionSeparator(character byte) bool {
+	return character == '(' || character == ')' || character == ' ' ||
+		character == '\t' || character == '\r' || character == '\n'
 }
 
 func sortResult(result *Result) {

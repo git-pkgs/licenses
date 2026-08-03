@@ -248,7 +248,13 @@ func TestAddMatchDerivesIdentificationFromExpressionIDs(t *testing.T) {
 		var result Result
 		rule := corpus.Rule{Expression: test.expression}
 		match := Match{LicenseIDs: expressionIDs(test.expression)}
-		addMatch(&result, rule, identificationForIDs(match.LicenseIDs), match)
+		addMatch(
+			&result,
+			rule,
+			test.expression,
+			identificationForIDs(match.LicenseIDs),
+			match,
+		)
 		if len(result.Detections) != 1 {
 			t.Fatalf("detections for %q = %#v", test.expression, result.Detections)
 		}
@@ -321,7 +327,7 @@ func TestMatcherKeepsRequiredPhraseRulesWhenMatchedExactly(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(result.Detections) != 1 ||
-		result.Detections[0].Expression != "required-helper" {
+		result.Detections[0].Expression != "LicenseRef-scancode-required-helper" {
 		t.Fatalf("detections = %#v", result.Detections)
 	}
 }
@@ -476,7 +482,7 @@ func TestEmbeddedMatcherPreservesSeparateLicenseSections(t *testing.T) {
 				[][]byte{mit, []byte("\ncomponent boundary\n"), bsd},
 				nil,
 			),
-			expressions: []string{"mit", "bsd-new"},
+			expressions: []string{"MIT", "BSD-3-Clause"},
 		},
 		{
 			name: "Apache text with appended MIT section",
@@ -484,7 +490,7 @@ func TestEmbeddedMatcherPreservesSeparateLicenseSections(t *testing.T) {
 				[][]byte{apache, []byte("\nadditional component terms\n"), mit},
 				nil,
 			),
-			expressions: []string{"apache-2.0", "mit"},
+			expressions: []string{"Apache-2.0", "MIT"},
 		},
 		{
 			name: "BSD text embedded in a larger document",
@@ -496,7 +502,7 @@ func TestEmbeddedMatcherPreservesSeparateLicenseSections(t *testing.T) {
 				},
 				nil,
 			),
-			expressions: []string{"bsd-new"},
+			expressions: []string{"BSD-3-Clause"},
 		},
 	}
 	for _, test := range tests {
@@ -608,6 +614,10 @@ func testMatcher(t *testing.T, matchedText bool) *Matcher {
 		Vocabulary: words,
 		Rules:      rules,
 		Automaton:  automaton,
+		ReportingIDs: map[string]string{
+			"agpl-3.0": "AGPL-3.0",
+			"mit":      "MIT",
+		},
 	})
 	if err != nil {
 		t.Fatal(err)

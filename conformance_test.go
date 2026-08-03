@@ -423,6 +423,10 @@ func runConformanceCases(
 ) []conformanceOutcome {
 	t.Helper()
 
+	ruleExpressions := make(map[string]string, len(matcher.engine.rules))
+	for _, rule := range matcher.engine.rules {
+		ruleExpressions[rule.ID] = rule.Expression
+	}
 	outcomes := make([]conformanceOutcome, 0, len(cases))
 	for _, testCase := range cases {
 		outcome := conformanceOutcome{
@@ -437,7 +441,16 @@ func runConformanceCases(
 			}
 			expressions := make([]string, 0, len(result.Detections))
 			for _, detection := range result.Detections {
-				expressions = append(expressions, detection.Expression)
+				for _, match := range detection.Matches {
+					expression, ok := ruleExpressions[match.RuleID]
+					if !ok {
+						expression = scanCodeExpression(
+							matcher.engine.spdx,
+							detection.Expression,
+						)
+					}
+					expressions = append(expressions, expression)
+				}
 			}
 			outcome.actual = uniqueExpressions(expressions)
 			outcome.exactExpected = expressionIntersection(
@@ -448,6 +461,10 @@ func runConformanceCases(
 		outcomes = append(outcomes, outcome)
 	}
 	return outcomes
+}
+
+func scanCodeExpression(index spdxIndex, raw string) string {
+	return rewriteExpressionIdentifiers(raw, index.resolve)
 }
 
 func rawExactExpressions(engine *matchEngine, input []byte) []string {

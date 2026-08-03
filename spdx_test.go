@@ -22,77 +22,77 @@ func TestMatcherSPDXTags(t *testing.T) {
 		{
 			name:       "short id",
 			input:      "SPDX-License-Identifier: MIT",
-			expression: "mit",
+			expression: "MIT",
 			start:      0,
 			end:        28,
 		},
 		{
 			name:       "isc",
 			input:      "SPDX-License-Identifier: ISC",
-			expression: "isc",
+			expression: "ISC",
 			start:      0,
 			end:        28,
 		},
 		{
 			name:       "line comment",
 			input:      "// Copyright.\n// SPDX-License-Identifier: MIT\npackage p\n",
-			expression: "mit",
+			expression: "MIT",
 			start:      17,
 			end:        45,
 		},
 		{
 			name:       "block comment",
 			input:      "/* SPDX-License-Identifier: MIT */",
-			expression: "mit",
+			expression: "MIT",
 			start:      3,
 			end:        31,
 		},
 		{
 			name:       "html comment",
 			input:      "<!-- SPDX-License-Identifier: MIT -->",
-			expression: "mit",
+			expression: "MIT",
 			start:      5,
 			end:        33,
 		},
 		{
 			name:       "crlf",
 			input:      "SPDX-License-Identifier: MIT\r\n",
-			expression: "mit",
+			expression: "MIT",
 			start:      0,
 			end:        28,
 		},
 		{
 			name:       "lowercase tag",
 			input:      "spdx-license-identifier: mit",
-			expression: "mit",
+			expression: "MIT",
 			start:      0,
 			end:        28,
 		},
 		{
 			name:       "typo tag",
 			input:      "SPDX-License-Identifer: MIT",
-			expression: "mit",
+			expression: "MIT",
 			start:      0,
 			end:        27,
 		},
 		{
 			name:       "compound without rule",
 			input:      "SPDX-License-Identifier: MIT OR ISC",
-			expression: "mit OR isc",
+			expression: "MIT OR ISC",
 			start:      0,
 			end:        35,
 		},
 		{
 			name:       "unknown license ref",
 			input:      "SPDX-License-Identifier: LicenseRef-Proprietary",
-			expression: "unknown-spdx",
+			expression: "LicenseRef-scancode-unknown-spdx",
 			start:      0,
 			end:        47,
 		},
 		{
 			name:       "scancode license ref",
 			input:      "SPDX-License-Identifier: LicenseRef-scancode-bsd-new",
-			expression: "bsd-new",
+			expression: "BSD-3-Clause",
 			start:      0,
 			end:        52,
 		},
@@ -143,17 +143,17 @@ func TestMatcherSPDXTagsDroppedForOverlappingRuleMatch(t *testing.T) {
 		{
 			name:       "aliased id",
 			input:      "SPDX-License-Identifier: BSD-3-Clause",
-			expression: "bsd-new",
+			expression: "BSD-3-Clause",
 		},
 		{
 			name:       "compound rule",
 			input:      "SPDX-License-Identifier: MIT OR Apache-2.0",
-			expression: "mit OR apache-2.0",
+			expression: "MIT OR Apache-2.0",
 		},
 		{
 			name:       "deprecated compound remap",
 			input:      "/* SPDX-License-Identifier: eCos-2.0 */",
-			expression: "gpl-2.0-plus WITH ecos-exception-2.0",
+			expression: "GPL-2.0-or-later WITH eCos-exception-2.0",
 		},
 	}
 	matcher := testSPDXMatcher(t)
@@ -237,8 +237,8 @@ func TestMatcherSPDXTagsMultiple(t *testing.T) {
 			}
 		}
 	}
-	if !got["mit"] || !got["isc"] || len(got) != 2 {
-		t.Fatalf("expressions = %v, want mit and isc", got)
+	if !got["MIT"] || !got["ISC"] || len(got) != 2 {
+		t.Fatalf("expressions = %v, want MIT and ISC", got)
 	}
 }
 
@@ -348,47 +348,74 @@ func TestSPDXExpressionSpanBounded(t *testing.T) {
 func TestSPDXNormalizeExpression(t *testing.T) {
 	t.Parallel()
 
-	index := spdxIndex{keys: map[string]string{
-		"mit":                     "mit",
-		"apache-2.0":              "apache-2.0",
-		"bsd-3-clause":            "bsd-new",
-		"gpl-2.0":                 "gpl-2.0",
-		"gpl-2.0+":                "gpl-2.0-plus",
-		"classpath-exception-2.0": "classpath-exception-2.0",
-	}}
+	index := spdxIndex{
+		keys: map[string]string{
+			"mit":                     "mit",
+			"apache-2.0":              "apache-2.0",
+			"bsd-3-clause":            "bsd-new",
+			"gpl-2.0":                 "gpl-2.0",
+			"gpl-2.0+":                "gpl-2.0-plus",
+			"classpath-exception-2.0": "classpath-exception-2.0",
+		},
+		reportingIDs: map[string]string{
+			"mit":                     "MIT",
+			"apache-2.0":              "Apache-2.0",
+			"bsd-new":                 "BSD-3-Clause",
+			"gpl-2.0":                 "GPL-2.0-only",
+			"gpl-2.0-plus":            "GPL-2.0-or-later",
+			"classpath-exception-2.0": "Classpath-exception-2.0",
+			"unknown-spdx":            "LicenseRef-scancode-unknown-spdx",
+		},
+	}
 	tests := []struct {
-		input      string
-		expression string
-		ids        []string
+		input       string
+		expression  string
+		ids         []string
+		scanCodeIDs []string
 	}{
-		{input: "MIT", expression: "mit", ids: []string{"mit"}},
+		{input: "MIT", expression: "MIT", ids: []string{"MIT"}, scanCodeIDs: []string{"mit"}},
 		{
-			input:      "MIT OR Apache-2.0",
-			expression: "mit OR apache-2.0",
-			ids:        []string{"mit", "apache-2.0"},
+			input:       "MIT OR Apache-2.0",
+			expression:  "MIT OR Apache-2.0",
+			ids:         []string{"MIT", "Apache-2.0"},
+			scanCodeIDs: []string{"mit", "apache-2.0"},
 		},
 		{
-			input:      "( MIT  OR  BSD-3-Clause )",
-			expression: "mit OR bsd-new",
-			ids:        []string{"mit", "bsd-new"},
+			input:       "( MIT  OR  BSD-3-Clause )",
+			expression:  "MIT OR BSD-3-Clause",
+			ids:         []string{"MIT", "BSD-3-Clause"},
+			scanCodeIDs: []string{"mit", "bsd-new"},
 		},
 		{
-			input:      "MIT AND MIT",
-			expression: "mit AND mit",
-			ids:        []string{"mit"},
+			input:       "MIT AND MIT",
+			expression:  "MIT AND MIT",
+			ids:         []string{"MIT"},
+			scanCodeIDs: []string{"mit"},
 		},
 		{
-			input:      "GPL-2.0+ WITH Classpath-exception-2.0",
-			expression: "gpl-2.0-plus WITH classpath-exception-2.0",
-			ids:        []string{"gpl-2.0-plus", "classpath-exception-2.0"},
+			input:       "GPL-2.0+ WITH Classpath-exception-2.0",
+			expression:  "GPL-2.0-or-later WITH Classpath-exception-2.0",
+			ids:         []string{"GPL-2.0-or-later", "Classpath-exception-2.0"},
+			scanCodeIDs: []string{"gpl-2.0-plus", "classpath-exception-2.0"},
 		},
 		{
-			input:      "MIT OR Apache-2.0 AND GPL-2.0+",
-			expression: "mit OR (apache-2.0 AND gpl-2.0-plus)",
-			ids:        []string{"mit", "apache-2.0", "gpl-2.0-plus"},
+			input:       "MIT OR Apache-2.0 AND GPL-2.0+",
+			expression:  "MIT OR (Apache-2.0 AND GPL-2.0-or-later)",
+			ids:         []string{"MIT", "Apache-2.0", "GPL-2.0-or-later"},
+			scanCodeIDs: []string{"mit", "apache-2.0", "gpl-2.0-plus"},
 		},
-		{input: "LicenseRef-custom", expression: "unknown-spdx", ids: []string{"unknown-spdx"}},
-		{input: "DocumentRef-vendor:LicenseRef-custom", expression: "unknown-spdx", ids: []string{"unknown-spdx"}},
+		{
+			input:       "LicenseRef-custom",
+			expression:  "LicenseRef-scancode-unknown-spdx",
+			ids:         []string{"LicenseRef-scancode-unknown-spdx"},
+			scanCodeIDs: []string{"unknown-spdx"},
+		},
+		{
+			input:       "DocumentRef-vendor:LicenseRef-custom",
+			expression:  "LicenseRef-scancode-unknown-spdx",
+			ids:         []string{"LicenseRef-scancode-unknown-spdx"},
+			scanCodeIDs: []string{"unknown-spdx"},
+		},
 		{input: "", expression: ""},
 		{input: "unrecognised", expression: ""},
 		{input: "AND OR", expression: ""},
@@ -399,7 +426,7 @@ func TestSPDXNormalizeExpression(t *testing.T) {
 		{input: "NOASSERTION", expression: ""},
 	}
 	for _, test := range tests {
-		expression, ids := index.normalizeExpression([]byte(test.input))
+		expression, ids, scanCodeIDs := index.normalizeExpression([]byte(test.input))
 		if expression != test.expression {
 			t.Errorf(
 				"normalizeExpression(%q) = %q, want %q",
@@ -416,6 +443,43 @@ func TestSPDXNormalizeExpression(t *testing.T) {
 				test.ids,
 			)
 		}
+		if !slices.Equal(scanCodeIDs, test.scanCodeIDs) {
+			t.Errorf(
+				"normalizeExpression(%q) ScanCode IDs = %v, want %v",
+				test.input,
+				scanCodeIDs,
+				test.scanCodeIDs,
+			)
+		}
+	}
+}
+
+func TestSPDXExpressionReporting(t *testing.T) {
+	t.Parallel()
+
+	index := spdxIndex{
+		keys: map[string]string{
+			"mit":                       "mit",
+			"bsd-3-clause":              "bsd-new",
+			"licenseref-scancode-other": "other",
+		},
+		reportingIDs: map[string]string{
+			"mit":     "MIT",
+			"bsd-new": "BSD-3-Clause",
+		},
+	}
+	scanCode := "mit OR (bsd-new AND other)"
+	expression, ids := index.reportExpression(scanCode)
+	if expression != "MIT OR (BSD-3-Clause AND LicenseRef-scancode-other)" {
+		t.Fatalf("reported expression = %q", expression)
+	}
+	wantIDs := []string{"MIT", "BSD-3-Clause", "LicenseRef-scancode-other"}
+	if !slices.Equal(ids, wantIDs) {
+		t.Fatalf("reported IDs = %v, want %v", ids, wantIDs)
+	}
+	got := rewriteExpressionIdentifiers(expression, index.resolve)
+	if got != scanCode {
+		t.Fatalf("ScanCode expression = %q, want %q", got, scanCode)
 	}
 }
 
@@ -443,6 +507,10 @@ func TestBuildSPDXIndex(t *testing.T) {
 		SPDXKeys: map[string]string{
 			"bsd-3-clause": "bsd-new",
 			"mit":          "mit",
+		},
+		ReportingIDs: map[string]string{
+			"bsd-new": "BSD-3-Clause",
+			"mit":     "MIT",
 		},
 	})
 
