@@ -18,6 +18,10 @@ const Unknown ID = 0
 
 const averageWordBytes = 6
 
+// Cap eager allocation so a long input with few words does not reserve memory
+// proportional to its byte length.
+const maximumInitialTokenCapacity = 4096
+
 // Offset is a half-open byte range in the original input.
 type Offset struct {
 	Start int
@@ -28,6 +32,13 @@ type Offset struct {
 type Tokens struct {
 	IDs     []ID
 	Offsets []Offset
+}
+
+// IDTokens contains token IDs and the byte range spanning all input tokens.
+type IDTokens struct {
+	IDs   []ID
+	Start int
+	End   int
 }
 
 // Word is a normalized word and its byte range in the original input.
@@ -128,6 +139,33 @@ func (v *Vocabulary) Tokenize(input []byte) Tokens {
 		offsets = append(offsets, Offset{Start: start, End: end})
 	})
 	return Tokens{IDs: ids, Offsets: offsets}
+}
+
+// TokenizeIDs normalizes input and maps every word to an ID. Start and End
+// span the first through last token without retaining an offset for every
+// token.
+func (v *Vocabulary) TokenizeIDs(input []byte) IDTokens {
+	capacity := min(len(input)/averageWordBytes, maximumInitialTokenCapacity)
+	result := IDTokens{IDs: make([]ID, 0, capacity)}
+	var scratch []byte
+	scan(input, func(start, end int) {
+		if len(result.IDs) == 0 {
+			result.Start = start
+		}
+		result.IDs = append(result.IDs, v.lookup(input[start:end], &scratch))
+		result.End = end
+	})
+	return result
+}
+
+// TokenOffsets returns every normalized word's byte range. tokenCount is a
+// capacity hint and does not limit the number of returned offsets.
+func TokenOffsets(input []byte, tokenCount int) []Offset {
+	offsets := make([]Offset, 0, max(tokenCount, 0))
+	scan(input, func(start, end int) {
+		offsets = append(offsets, Offset{Start: start, End: end})
+	})
+	return offsets
 }
 
 // Words returns normalized words and their byte ranges without mapping IDs.

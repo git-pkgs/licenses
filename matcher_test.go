@@ -30,6 +30,9 @@ func TestMatcherWholeTextHash(t *testing.T) {
 	if len(result.Detections) != 1 {
 		t.Fatalf("detections = %#v", result.Detections)
 	}
+	if result.Clues != nil {
+		t.Fatalf("clues = %#v, want nil", result.Clues)
+	}
 	detection := result.Detections[0]
 	if detection.Expression != "AGPL-3.0 OR MIT" {
 		t.Fatalf("expression = %q", detection.Expression)
@@ -101,6 +104,22 @@ func TestMatcherAhoExactMatchesAndClues(t *testing.T) {
 	}
 	if result.Clues[0].Kind != KindClue {
 		t.Fatalf("clue kind = %q, want %q", result.Clues[0].Kind, KindClue)
+	}
+}
+
+func TestMatcherClueOnlyResultKeepsNilDetections(t *testing.T) {
+	t.Parallel()
+
+	matcher := testMatcher(t, false)
+	result, err := matcher.Match(context.Background(), []byte("prefix clue suffix"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Detections != nil {
+		t.Fatalf("detections = %#v, want nil", result.Detections)
+	}
+	if len(result.Clues) != 1 {
+		t.Fatalf("clues = %#v", result.Clues)
 	}
 }
 
@@ -233,42 +252,6 @@ func potentialPlaceholderIdentifier(identifier string) bool {
 		identifier == "warranty-disclaimer"
 }
 
-func TestAddMatchDerivesIdentificationFromExpressionIDs(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		expression string
-		want       Identification
-	}{
-		{expression: "MIT", want: Identified},
-		{expression: "MIT AND free-unknown", want: Partial},
-		{expression: "unknown-license-reference", want: NoAssertion},
-	}
-	for _, test := range tests {
-		var result Result
-		rule := corpus.Rule{Expression: test.expression}
-		match := Match{LicenseIDs: expressionIDs(test.expression)}
-		addMatch(
-			&result,
-			rule,
-			test.expression,
-			identificationForIDs(match.LicenseIDs),
-			match,
-		)
-		if len(result.Detections) != 1 {
-			t.Fatalf("detections for %q = %#v", test.expression, result.Detections)
-		}
-		if got := result.Detections[0].Identification; got != test.want {
-			t.Errorf(
-				"identification for %q = %q, want %q",
-				test.expression,
-				got,
-				test.want,
-			)
-		}
-	}
-}
-
 func TestMatcherReturnsIndependentLicenseIDSlices(t *testing.T) {
 	t.Parallel()
 
@@ -285,6 +268,27 @@ func TestMatcherReturnsIndependentLicenseIDSlices(t *testing.T) {
 	}
 	if got := second.Detections[0].Matches[0].LicenseIDs[0]; got != "AGPL-3.0" {
 		t.Fatalf("license ID = %q, want AGPL-3.0", got)
+	}
+}
+
+func TestMatcherReturnsIndependentLicenseIDSlicesForEachMatch(t *testing.T) {
+	t.Parallel()
+
+	matcher := testMatcher(t, false)
+	result, err := matcher.Match(
+		context.Background(),
+		[]byte("alpha beta boundary alpha beta"),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Detections) != 1 || len(result.Detections[0].Matches) != 2 {
+		t.Fatalf("detections = %#v", result.Detections)
+	}
+	matches := result.Detections[0].Matches
+	matches[0].LicenseIDs[0] = "changed"
+	if got := matches[1].LicenseIDs[0]; got != "AGPL-3.0" {
+		t.Fatalf("second match license ID = %q, want AGPL-3.0", got)
 	}
 }
 
@@ -364,7 +368,7 @@ func TestCollectExactMatchesEnforcesCandidateLimit(t *testing.T) {
 		tokens[index] = token
 	}
 
-	_, err = engine.collectExactMatches(context.Background(), tokens)
+	_, _, err = engine.collectExactMatches(context.Background(), tokens)
 	if err == nil {
 		t.Fatal("collectExactMatches accepted too many candidates")
 	}

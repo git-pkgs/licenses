@@ -109,11 +109,12 @@ func (index spdxIndex) reportExpression(expression string) (string, []string) {
 // on 's' bytes with a case-insensitive prefix check. Tags whose span sits
 // within an existing rule match are dropped so a partial tag inside a larger
 // notice does not add a second, narrower expression.
-func (m *Matcher) matchSPDXTags(input []byte, result *Result) {
+func (m *Matcher) matchSPDXTags(input []byte, result *Result) bool {
+	matched := false
 	for offset := 0; offset < len(input); {
 		anchor := indexSPDXAnchor(input, offset)
 		if anchor < 0 {
-			return
+			return matched
 		}
 		tagEnd := spdxTagEnd(input, anchor)
 		if tagEnd < 0 {
@@ -148,7 +149,9 @@ func (m *Matcher) matchSPDXTags(input []byte, result *Result) {
 			match.Matched = slices.Clone(input[anchor:expressionEnd])
 		}
 		addDetection(result, expression, identificationForIDs(scanCodeIDs), match)
+		matched = true
 	}
+	return matched
 }
 
 // resultOverlapsSpan reports whether any existing detection or clue match
@@ -176,14 +179,7 @@ func resultOverlapsSpan(result *Result, start, end int) bool {
 // case-insensitively, or -1.
 func indexSPDXAnchor(input []byte, from int) int {
 	for offset := from; offset+4 <= len(input); {
-		relative := bytes.IndexByte(input[offset:], 's')
-		upper := bytes.IndexByte(input[offset:], 'S')
-		switch {
-		case relative < 0:
-			relative = upper
-		case upper >= 0 && upper < relative:
-			relative = upper
-		}
+		relative := bytes.IndexAny(input[offset:], "sS")
 		if relative < 0 {
 			return -1
 		}

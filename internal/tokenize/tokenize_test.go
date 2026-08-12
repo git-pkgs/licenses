@@ -163,6 +163,13 @@ func TestTokenizeMapsOffsetsAndUnknownWords(t *testing.T) {
 	if !slices.Equal(got.Offsets, wantOffsets) {
 		t.Fatalf("offsets = %#v, want %#v", got.Offsets, wantOffsets)
 	}
+	ids := vocabulary.TokenizeIDs([]byte("MIT, mystery; Apache"))
+	if !slices.Equal(ids.IDs, wantIDs) || ids.Start != 0 || ids.End != 20 {
+		t.Fatalf("ID-only tokens = %#v", ids)
+	}
+	if offsets := TokenOffsets([]byte("MIT, mystery; Apache"), len(wantIDs)); !slices.Equal(offsets, wantOffsets) {
+		t.Fatalf("token offsets = %#v, want %#v", offsets, wantOffsets)
+	}
 }
 
 func TestVocabularyIsSafeForConcurrentTokenize(t *testing.T) {
@@ -235,6 +242,21 @@ func FuzzTokenize(f *testing.F) {
 			)
 		}
 		checkFuzzTokens(t, input, words, vocabulary, tokens)
+		ids := vocabulary.TokenizeIDs(input)
+		if !slices.Equal(ids.IDs, tokens.IDs) {
+			t.Fatalf("ID-only tokens differ: %#v", ids)
+		}
+		if !slices.Equal(TokenOffsets(input, len(tokens.IDs)), tokens.Offsets) {
+			t.Fatal("separate token offsets differ")
+		}
+		if len(tokens.Offsets) == 0 {
+			if ids.Start != 0 || ids.End != 0 {
+				t.Fatalf("empty token span = %d:%d", ids.Start, ids.End)
+			}
+		} else if ids.Start != tokens.Offsets[0].Start ||
+			ids.End != tokens.Offsets[len(tokens.Offsets)-1].End {
+			t.Fatalf("token span = %d:%d", ids.Start, ids.End)
+		}
 
 		again := vocabulary.Tokenize(input)
 		if !slices.Equal(tokens.IDs, again.IDs) || !slices.Equal(tokens.Offsets, again.Offsets) {
