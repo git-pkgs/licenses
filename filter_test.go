@@ -12,13 +12,24 @@ func TestFilterContainedMatchesKeepsLargestSpan(t *testing.T) {
 	t.Parallel()
 
 	matches := []exactMatch{
-		{ruleIndex: 0, method: Exact, tokenStart: 0, tokenEnd: 6},
-		{ruleIndex: 1, method: Exact, tokenStart: 2, tokenEnd: 4},
-		{ruleIndex: 2, method: Exact, tokenStart: 8, tokenEnd: 10},
+		{ruleIndex: 0, tokenStart: 0, tokenEnd: 6},
+		{ruleIndex: 1, tokenStart: 2, tokenEnd: 4},
+		{ruleIndex: 2, tokenStart: 8, tokenEnd: 10},
 	}
-	kept, discarded, err := filterContainedMatches(context.Background(), matches)
+	states := make([]exactMatchState, len(matches))
+	discardedAny, err := filterContainedMatches(
+		context.Background(),
+		matches,
+		states,
+		exactMatchDiscardedContained,
+	)
 	if err != nil {
 		t.Fatal(err)
+	}
+	kept := exactMatchesInState(matches, states, exactMatchActive)
+	discarded := exactMatchesInState(matches, states, exactMatchDiscardedContained)
+	if !discardedAny {
+		t.Fatal("filterContainedMatches did not report discarded matches")
 	}
 	if len(kept) != 2 ||
 		kept[0].ruleIndex != 0 ||
@@ -30,49 +41,66 @@ func TestFilterContainedMatchesKeepsLargestSpan(t *testing.T) {
 	}
 }
 
-func TestFilterOverlappingMatchesKeepsLargerSpan(t *testing.T) {
+func TestFilterOverlappingMatchesRemovesExpectedMatch(t *testing.T) {
 	t.Parallel()
 
-	engine := &matchEngine{rules: []corpus.Rule{
-		{Expression: "outer"},
-		{Expression: "inner"},
-	}}
-	matches := []exactMatch{
-		{ruleIndex: 0, method: Exact, tokenStart: 0, tokenEnd: 10},
-		{ruleIndex: 1, method: Exact, tokenStart: 3, tokenEnd: 12},
+	tests := []struct {
+		name      string
+		matches   []exactMatch
+		kept      uint32
+		discarded uint32
+	}{
+		{
+			name: "next",
+			matches: []exactMatch{
+				{ruleIndex: 0, tokenStart: 0, tokenEnd: 10},
+				{ruleIndex: 1, tokenStart: 3, tokenEnd: 12},
+			},
+			kept:      0,
+			discarded: 1,
+		},
+		{
+			name: "current",
+			matches: []exactMatch{
+				{ruleIndex: 0, tokenStart: 0, tokenEnd: 9},
+				{ruleIndex: 1, tokenStart: 2, tokenEnd: 12},
+			},
+			kept:      1,
+			discarded: 0,
+		},
 	}
-	kept, discarded, err := filterOverlappingMatches(context.Background(), engine, matches)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(kept) != 1 || kept[0].ruleIndex != 0 {
-		t.Fatalf("kept = %#v", kept)
-	}
-	if len(discarded) != 1 || discarded[0].ruleIndex != 1 {
-		t.Fatalf("discarded = %#v", discarded)
-	}
-}
-
-func TestFilterOverlappingMatchesRemovesCurrent(t *testing.T) {
-	t.Parallel()
-
-	engine := &matchEngine{rules: []corpus.Rule{
-		{Expression: "short"},
-		{Expression: "long"},
-	}}
-	matches := []exactMatch{
-		{ruleIndex: 0, method: Exact, tokenStart: 0, tokenEnd: 9},
-		{ruleIndex: 1, method: Exact, tokenStart: 2, tokenEnd: 12},
-	}
-	kept, discarded, err := filterOverlappingMatches(context.Background(), engine, matches)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(kept) != 1 || kept[0].ruleIndex != 1 {
-		t.Fatalf("kept = %#v", kept)
-	}
-	if len(discarded) != 1 || discarded[0].ruleIndex != 0 {
-		t.Fatalf("discarded = %#v", discarded)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			engine := &matchEngine{rules: []corpus.Rule{
+				{Expression: "first"},
+				{Expression: "second"},
+			}}
+			states := make([]exactMatchState, len(test.matches))
+			discardedAny, err := filterOverlappingMatches(
+				context.Background(),
+				engine,
+				test.matches,
+				states,
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			kept := exactMatchesInState(test.matches, states, exactMatchActive)
+			discarded := exactMatchesInState(
+				test.matches,
+				states,
+				exactMatchDiscardedOverlapping,
+			)
+			if !discardedAny {
+				t.Fatal("filterOverlappingMatches did not report discarded matches")
+			}
+			if len(kept) != 1 || kept[0].ruleIndex != test.kept {
+				t.Fatalf("kept = %#v", kept)
+			}
+			if len(discarded) != 1 || discarded[0].ruleIndex != test.discarded {
+				t.Fatalf("discarded = %#v", discarded)
+			}
+		})
 	}
 }
 
@@ -174,20 +202,32 @@ func TestOverlapRemovalForPairKeepsFalsePositivePair(t *testing.T) {
 func TestRestoreNonOverlappingMergesInOrder(t *testing.T) {
 	t.Parallel()
 
-	kept := []exactMatch{
-		{ruleIndex: 0, method: Exact, tokenStart: 0, tokenEnd: 2},
-		{ruleIndex: 1, method: Exact, tokenStart: 8, tokenEnd: 10},
+	matches := []exactMatch{
+		{ruleIndex: 0, tokenStart: 0, tokenEnd: 2},
+		{ruleIndex: 2, tokenStart: 1, tokenEnd: 3},
+		{ruleIndex: 3, tokenStart: 4, tokenEnd: 7},
+		{ruleIndex: 4, tokenStart: 5, tokenEnd: 6},
+		{ruleIndex: 1, tokenStart: 8, tokenEnd: 10},
+		{ruleIndex: 5, tokenStart: 9, tokenEnd: 11},
 	}
-	discarded := []exactMatch{
-		{ruleIndex: 2, method: Exact, tokenStart: 1, tokenEnd: 3},
-		{ruleIndex: 3, method: Exact, tokenStart: 4, tokenEnd: 7},
-		{ruleIndex: 4, method: Exact, tokenStart: 5, tokenEnd: 6},
-		{ruleIndex: 5, method: Exact, tokenStart: 9, tokenEnd: 11},
+	states := []exactMatchState{
+		exactMatchActive,
+		exactMatchDiscardedContained,
+		exactMatchDiscardedContained,
+		exactMatchDiscardedContained,
+		exactMatchActive,
+		exactMatchDiscardedContained,
 	}
-	got, err := restoreNonOverlapping(context.Background(), kept, discarded)
+	err := restoreNonOverlapping(
+		context.Background(),
+		matches,
+		states,
+		exactMatchDiscardedContained,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
+	got := exactMatchesInState(matches, states, exactMatchActive)
 	if len(got) != 4 ||
 		got[0].ruleIndex != 0 ||
 		got[1].ruleIndex != 3 ||
@@ -203,10 +243,30 @@ func TestFiltersReturnContextError(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	matches := []exactMatch{
-		{ruleIndex: 0, method: Exact, tokenStart: 0, tokenEnd: 4},
-		{ruleIndex: 1, method: Exact, tokenStart: 1, tokenEnd: 2},
+		{ruleIndex: 0, tokenStart: 0, tokenEnd: 4},
+		{ruleIndex: 1, tokenStart: 1, tokenEnd: 2},
 	}
-	if _, _, err := filterContainedMatches(ctx, matches); !errors.Is(err, context.Canceled) {
+	states := make([]exactMatchState, len(matches))
+	if _, err := filterContainedMatches(
+		ctx,
+		matches,
+		states,
+		exactMatchDiscardedContained,
+	); !errors.Is(err, context.Canceled) {
 		t.Fatalf("error = %v, want context.Canceled", err)
 	}
+}
+
+func exactMatchesInState(
+	matches []exactMatch,
+	states []exactMatchState,
+	want exactMatchState,
+) []exactMatch {
+	var selected []exactMatch
+	for index, match := range matches {
+		if states[index] == want {
+			selected = append(selected, match)
+		}
+	}
+	return selected
 }

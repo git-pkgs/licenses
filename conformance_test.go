@@ -224,7 +224,7 @@ func logConformanceMatchTrace(t *testing.T, matcher *Matcher, testCase conforman
 	t.Helper()
 
 	tokenized := matcher.engine.vocabulary.Tokenize(testCase.input)
-	raw, err := matcher.engine.collectExactMatches(context.Background(), tokenized.IDs)
+	raw, _, err := matcher.engine.collectExactMatches(context.Background(), tokenized.IDs)
 	if err != nil {
 		t.Fatalf("%s: trace exact matches: %v", testCase.path, err)
 	}
@@ -259,7 +259,6 @@ func logConformanceMatchTrace(t *testing.T, matcher *Matcher, testCase conforman
 
 func exactMatchesEqual(first, second exactMatch) bool {
 	return first.ruleIndex == second.ruleIndex &&
-		first.method == second.method &&
 		first.tokenStart == second.tokenStart &&
 		first.tokenEnd == second.tokenEnd
 }

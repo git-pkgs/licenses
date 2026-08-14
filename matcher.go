@@ -251,14 +251,14 @@ func (m *Matcher) match(ctx context.Context, b []byte, filters exactFilterOption
 		return Result{}, err
 	}
 
-	tokens := m.engine.vocabulary.Tokenize(b)
+	tokens := m.engine.vocabulary.TokenizeIDs(b)
 	result := Result{Corpus: m.engine.info}
 	if len(tokens.IDs) == 0 {
 		m.matchSPDXTags(b, &result)
 		sortResult(&result)
 		return result, nil
 	}
-	candidates, err := m.engine.collectExactMatches(ctx, tokens.IDs)
+	candidates, method, err := m.engine.collectExactMatches(ctx, tokens.IDs)
 	if err != nil {
 		return Result{}, err
 	}
@@ -266,37 +266,109 @@ func (m *Matcher) match(ctx context.Context, b []byte, filters exactFilterOption
 	if err != nil {
 		return Result{}, err
 	}
-	for _, candidate := range candidates {
-		rule := m.engine.rules[candidate.ruleIndex]
-		metadata := m.engine.metadataForRule(candidate.ruleIndex)
-		start := tokens.Offsets[candidate.tokenStart].Start
-		end := tokens.Offsets[candidate.tokenEnd-1].End
-		addMatch(
-			&result,
-			rule,
-			metadata.expression,
-			metadata.identification,
-			m.makeMatch(b, rule, metadata, candidate.method, start, end),
-		)
+	var offsets []tokenize.Offset
+	if len(candidates) != 0 && method == Exact {
+		offsets = tokenize.TokenOffsets(b, len(tokens.IDs))
+		if err := ctx.Err(); err != nil {
+			return Result{}, err
+		}
 	}
-	m.matchSPDXTags(b, &result)
-	sortResult(&result)
+	if err := m.addExactMatches(
+		ctx,
+		b,
+		&result,
+		candidates,
+		method,
+		offsets,
+		tokens.Start,
+		tokens.End,
+	); err != nil {
+		return Result{}, err
+	}
+	if m.matchSPDXTags(b, &result) {
+		sortResult(&result)
+	} else {
+		sortDetections(result.Detections)
+	}
 	return result, nil
 }
 
 const maxExactMatchCandidates = 100_000
 
+// Large candidate sets use two full automaton passes so the retained slice is
+// allocated once at its exact, bounded size.
+const exactMatchTwoPassThreshold = 4096
+
 func (e *matchEngine) collectExactMatches(
 	ctx context.Context,
 	tokens []tokenize.ID,
-) ([]exactMatch, error) {
+) ([]exactMatch, Method, error) {
 	if matches := e.hashMatches(tokens); len(matches) != 0 {
-		return matches, nil
+		return matches, Hash, nil
 	}
 
 	var candidates []exactMatch
 	var outputs []uint32
 	state := uint32(0)
+	for position, token := range tokens {
+		if position&4095 == 0 {
+			if err := ctx.Err(); err != nil {
+				return nil, "", err
+			}
+		}
+		state = e.automaton.Next(state, uint32(token))
+		outputs = e.automaton.AppendOutputs(outputs[:0], state)
+		for _, ruleIndex := range outputs {
+			ruleLength := len(e.rules[ruleIndex].Tokens)
+			if ruleLength > position+1 {
+				continue
+			}
+			if len(candidates) == maxExactMatchCandidates {
+				return nil, "", exactMatchCandidateLimitError()
+			}
+			candidates = append(candidates, exactMatch{
+				ruleIndex:  ruleIndex,
+				tokenStart: position + 1 - ruleLength,
+				tokenEnd:   position + 1,
+			})
+			if len(candidates) == exactMatchTwoPassThreshold {
+				matches, err := e.collectManyExactMatches(ctx, tokens)
+				return matches, Exact, err
+			}
+		}
+	}
+	return candidates, Exact, nil
+}
+
+func (e *matchEngine) collectManyExactMatches(
+	ctx context.Context,
+	tokens []tokenize.ID,
+) ([]exactMatch, error) {
+	count := 0
+	var outputs []uint32
+	state := uint32(0)
+	for position, token := range tokens {
+		if position&4095 == 0 {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+		}
+		state = e.automaton.Next(state, uint32(token))
+		outputs = e.automaton.AppendOutputs(outputs[:0], state)
+		for _, ruleIndex := range outputs {
+			if len(e.rules[ruleIndex].Tokens) > position+1 {
+				continue
+			}
+			if count == maxExactMatchCandidates {
+				return nil, exactMatchCandidateLimitError()
+			}
+			count++
+		}
+	}
+
+	candidates := make([]exactMatch, 0, count)
+	outputs = outputs[:0]
+	state = 0
 	for position, token := range tokens {
 		if position&4095 == 0 {
 			if err := ctx.Err(); err != nil {
@@ -310,12 +382,8 @@ func (e *matchEngine) collectExactMatches(
 			if ruleLength > position+1 {
 				continue
 			}
-			if len(candidates) == maxExactMatchCandidates {
-				return nil, exactMatchCandidateLimitError()
-			}
 			candidates = append(candidates, exactMatch{
 				ruleIndex:  ruleIndex,
-				method:     Exact,
 				tokenStart: position + 1 - ruleLength,
 				tokenEnd:   position + 1,
 			})
@@ -342,7 +410,6 @@ func (e *matchEngine) hashMatches(tokens []tokenize.ID) []exactMatch {
 		if equalTokens(tokens, e.rules[ruleIndex].Tokens) {
 			matches = append(matches, exactMatch{
 				ruleIndex: ruleIndex,
-				method:    Hash,
 				tokenEnd:  len(tokens),
 			})
 		}
@@ -400,14 +467,14 @@ func (e *matchEngine) metadataForRule(ruleIndex uint32) expressionMetadata {
 func (m *Matcher) makeMatch(
 	input []byte,
 	rule corpus.Rule,
-	metadata expressionMetadata,
+	licenseIDs []string,
 	method Method,
 	start int,
 	end int,
 ) Match {
 	match := Match{
 		RuleID:     rule.ID,
-		LicenseIDs: slices.Clone(metadata.licenseIDs),
+		LicenseIDs: licenseIDs,
 		Kind:       ruleKind(rule.Flags),
 		Method:     method,
 		Score:      float64(rule.Relevance),
@@ -419,6 +486,94 @@ func (m *Matcher) makeMatch(
 		match.Matched = slices.Clone(input[start:end])
 	}
 	return match
+}
+
+func (m *Matcher) addExactMatches(
+	ctx context.Context,
+	input []byte,
+	result *Result,
+	candidates []exactMatch,
+	method Method,
+	offsets []tokenize.Offset,
+	firstTokenStart int,
+	lastTokenEnd int,
+) error {
+	if len(candidates) == 0 {
+		return nil
+	}
+
+	detectionCounts := make(map[string]int)
+	clueCount := 0
+	identifierCount := 0
+	for index, candidate := range candidates {
+		if err := checkFilterContext(ctx, index); err != nil {
+			return err
+		}
+		rule := m.engine.rules[candidate.ruleIndex]
+		metadata := m.engine.metadataForRule(candidate.ruleIndex)
+		identifierCount += len(metadata.licenseIDs)
+		if rule.Flags&corpus.FlagLicenseClue != 0 {
+			clueCount++
+			continue
+		}
+		detectionCounts[metadata.expression]++
+	}
+
+	if len(detectionCounts) != 0 {
+		result.Detections = make([]Detection, 0, len(detectionCounts))
+	}
+	if clueCount != 0 {
+		result.Clues = make([]Match, 0, clueCount)
+	}
+	var identifiers []string
+	if identifierCount != 0 {
+		identifiers = make([]string, identifierCount)
+	}
+	for index, candidate := range candidates {
+		if err := checkFilterContext(ctx, index); err != nil {
+			return err
+		}
+		rule := m.engine.rules[candidate.ruleIndex]
+		metadata := m.engine.metadataForRule(candidate.ruleIndex)
+		var licenseIDs []string
+		if len(metadata.licenseIDs) == 0 {
+			licenseIDs = slices.Clone(metadata.licenseIDs)
+		} else {
+			licenseIDs = identifiers[:len(metadata.licenseIDs):len(metadata.licenseIDs)]
+			copy(licenseIDs, metadata.licenseIDs)
+			identifiers = identifiers[len(licenseIDs):]
+		}
+
+		start, end := firstTokenStart, lastTokenEnd
+		if method == Exact {
+			start = offsets[candidate.tokenStart].Start
+			end = offsets[candidate.tokenEnd-1].End
+		}
+		match := m.makeMatch(input, rule, licenseIDs, method, start, end)
+		if rule.Flags&corpus.FlagLicenseClue != 0 {
+			result.Clues = append(result.Clues, match)
+			continue
+		}
+
+		count := detectionCounts[metadata.expression]
+		var detectionIndex int
+		if count > 0 {
+			detectionIndex = len(result.Detections)
+			result.Detections = append(result.Detections, Detection{
+				Expression:     metadata.expression,
+				Identification: metadata.identification,
+				Matches:        make([]Match, 0, count),
+			})
+			detectionCounts[metadata.expression] = -detectionIndex - 1
+		} else {
+			detectionIndex = -count - 1
+		}
+		result.Detections[detectionIndex].Matches = append(
+			result.Detections[detectionIndex].Matches,
+			match,
+		)
+	}
+	return nil
 }
 
 func ruleKind(flags uint16) Kind {
@@ -445,20 +600,6 @@ func ruleKind(flags uint16) Kind {
 	default:
 		return KindUnknown
 	}
-}
-
-func addMatch(
-	result *Result,
-	rule corpus.Rule,
-	expression string,
-	identification Identification,
-	match Match,
-) {
-	if rule.Flags&corpus.FlagLicenseClue != 0 {
-		result.Clues = append(result.Clues, match)
-		return
-	}
-	addDetection(result, expression, identification, match)
 }
 
 func addDetection(
@@ -572,7 +713,12 @@ func sortResult(result *Result) {
 	for index := range result.Detections {
 		sortMatches(result.Detections[index].Matches)
 	}
-	slices.SortFunc(result.Detections, func(first, second Detection) int {
+	sortDetections(result.Detections)
+	sortMatches(result.Clues)
+}
+
+func sortDetections(detections []Detection) {
+	slices.SortFunc(detections, func(first, second Detection) int {
 		firstStart := first.Matches[0].Start
 		secondStart := second.Matches[0].Start
 		if compared := cmp.Compare(firstStart, secondStart); compared != 0 {
@@ -580,7 +726,6 @@ func sortResult(result *Result) {
 		}
 		return cmp.Compare(first.Expression, second.Expression)
 	})
-	sortMatches(result.Clues)
 }
 
 func sortMatches(matches []Match) {

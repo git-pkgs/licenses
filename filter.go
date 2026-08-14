@@ -18,7 +18,6 @@ const (
 
 type exactMatch struct {
 	ruleIndex  uint32
-	method     Method
 	tokenStart int
 	tokenEnd   int
 }
@@ -32,6 +31,16 @@ type exactFilterOptions struct {
 	overlapping   bool
 	falsePositive bool
 }
+
+type exactMatchState uint8
+
+const (
+	exactMatchActive exactMatchState = iota
+	exactMatchDiscardedContained
+	exactMatchDiscardedOverlapping
+	exactMatchDiscardedFinal
+	exactMatchRestored
+)
 
 var allExactFilters = exactFilterOptions{
 	contained:     true,
@@ -53,45 +62,69 @@ func filterExactMatches(
 		slices.SortStableFunc(matches, compareExactMatches)
 	}
 
-	var err error
-	var discardedContained, discardedOverlapping []exactMatch
+	states := make([]exactMatchState, len(matches))
+	var discardedContained, discardedOverlapping bool
 	if options.contained {
-		matches, discardedContained, err = filterContainedMatches(ctx, matches)
+		var err error
+		discardedContained, err = filterContainedMatches(
+			ctx,
+			matches,
+			states,
+			exactMatchDiscardedContained,
+		)
 		if err != nil {
 			return nil, err
 		}
 	}
 	if options.overlapping {
-		matches, discardedOverlapping, err = filterOverlappingMatches(ctx, engine, matches)
+		var err error
+		discardedOverlapping, err = filterOverlappingMatches(
+			ctx,
+			engine,
+			matches,
+			states,
+		)
 		if err != nil {
 			return nil, err
 		}
 	}
-	if len(discardedContained) != 0 {
-		matches, err = restoreNonOverlapping(ctx, matches, discardedContained)
-		if err != nil {
+	if discardedContained {
+		if err := restoreNonOverlapping(
+			ctx,
+			matches,
+			states,
+			exactMatchDiscardedContained,
+		); err != nil {
 			return nil, err
 		}
 	}
-	if len(discardedOverlapping) != 0 {
-		matches, err = restoreNonOverlapping(ctx, matches, discardedOverlapping)
-		if err != nil {
+	if discardedOverlapping {
+		if err := restoreNonOverlapping(
+			ctx,
+			matches,
+			states,
+			exactMatchDiscardedOverlapping,
+		); err != nil {
 			return nil, err
 		}
 	}
 	if options.contained {
-		matches, _, err = filterContainedMatches(ctx, matches)
-		if err != nil {
+		if _, err := filterContainedMatches(
+			ctx,
+			matches,
+			states,
+			exactMatchDiscardedFinal,
+		); err != nil {
 			return nil, err
 		}
 	}
 	if options.falsePositive {
-		matches, err = filterFalsePositiveMatches(ctx, engine, matches)
-		if err != nil {
+		if err := filterFalsePositiveMatches(ctx, engine, matches, states); err != nil {
 			return nil, err
 		}
 	}
 
+	matches = compactExactMatches(matches, states)
 	sortExactMatches(engine, matches)
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -103,25 +136,30 @@ func filterExactMatches(
 func filterContainedMatches(
 	ctx context.Context,
 	matches []exactMatch,
-) ([]exactMatch, []exactMatch, error) {
+	states []exactMatchState,
+	discardState exactMatchState,
+) (bool, error) {
 	if len(matches) < minimumMatchCount {
-		return matches, nil, nil
+		return false, nil
 	}
 
-	keep := make([]bool, len(matches))
+	discarded := false
 	maxEnd := -1
 	for index, match := range matches {
 		if err := checkFilterContext(ctx, index); err != nil {
-			return nil, nil, err
+			return false, err
 		}
-		if match.tokenEnd <= maxEnd {
+		if states[index] != exactMatchActive {
 			continue
 		}
-		keep[index] = true
+		if match.tokenEnd <= maxEnd {
+			states[index] = discardState
+			discarded = true
+			continue
+		}
 		maxEnd = match.tokenEnd
 	}
-	kept, discarded := splitExactMatches(matches, keep)
-	return kept, discarded, nil
+	return discarded, nil
 }
 
 // matches must be ordered by compareExactMatches.
@@ -129,31 +167,29 @@ func filterOverlappingMatches(
 	ctx context.Context,
 	engine *matchEngine,
 	matches []exactMatch,
-) ([]exactMatch, []exactMatch, error) {
+	states []exactMatchState,
+) (bool, error) {
 	if len(matches) < minimumMatchCount {
-		return matches, nil, nil
+		return false, nil
 	}
 
-	keep := make([]bool, len(matches))
-	for index := range keep {
-		keep[index] = true
-	}
+	discarded := false
 	previousKept := -1
 	operations := 0
 	for current := 0; current < len(matches)-1; current++ {
-		if !keep[current] {
+		if states[current] != exactMatchActive {
 			continue
 		}
 		if err := checkFilterContext(ctx, operations); err != nil {
-			return nil, nil, err
+			return false, err
 		}
 		operations++
 		for next := current + 1; next < len(matches); next++ {
-			if !keep[next] {
+			if states[next] != exactMatchActive {
 				continue
 			}
 			if err := checkFilterContext(ctx, operations); err != nil {
-				return nil, nil, err
+				return false, err
 			}
 			operations++
 			if matches[next].tokenStart >= matches[current].tokenEnd {
@@ -161,21 +197,22 @@ func filterOverlappingMatches(
 			}
 			switch overlapRemovalForPair(engine, matches, current, next, previousKept) {
 			case removeNext:
-				keep[next] = false
+				states[next] = exactMatchDiscardedOverlapping
+				discarded = true
 				continue
 			case removeCurrent:
-				keep[current] = false
+				states[current] = exactMatchDiscardedOverlapping
+				discarded = true
 			}
-			if !keep[current] {
+			if states[current] != exactMatchActive {
 				break
 			}
 		}
-		if keep[current] {
+		if states[current] == exactMatchActive {
 			previousKept = current
 		}
 	}
-	kept, discarded := splitExactMatches(matches, keep)
-	return kept, discarded, nil
+	return discarded, nil
 }
 
 func overlapRemovalForPair(
@@ -259,91 +296,79 @@ func overlappingMatchToRemove(
 	return removeNeither
 }
 
-// matches and discarded must be ordered by compareExactMatches.
+// matches must be ordered by compareExactMatches.
 func restoreNonOverlapping(
 	ctx context.Context,
-	matches, discarded []exactMatch,
-) ([]exactMatch, error) {
-	type interval struct {
-		start int
-		end   int
-	}
-
-	unions := make([]interval, 0, len(matches))
-	for index, match := range matches {
-		if err := checkFilterContext(ctx, index); err != nil {
-			return nil, err
-		}
-		if len(unions) == 0 || match.tokenStart >= unions[len(unions)-1].end {
-			unions = append(unions, interval{start: match.tokenStart, end: match.tokenEnd})
-			continue
-		}
-		if match.tokenEnd > unions[len(unions)-1].end {
-			unions[len(unions)-1].end = match.tokenEnd
-		}
-	}
-
-	restored := make([]exactMatch, 0, len(discarded))
-	unionIndex := 0
-	for index, candidate := range discarded {
-		if err := checkFilterContext(ctx, index); err != nil {
-			return nil, err
-		}
-		for unionIndex < len(unions) && unions[unionIndex].end <= candidate.tokenStart {
-			unionIndex++
-		}
-		if unionIndex < len(unions) && unions[unionIndex].start < candidate.tokenEnd {
-			continue
-		}
-		restored = append(restored, candidate)
-	}
-	return mergeExactMatches(matches, restored), nil
-}
-
-func mergeExactMatches(first, second []exactMatch) []exactMatch {
-	if len(second) == 0 {
-		return first
-	}
-	merged := make([]exactMatch, 0, len(first)+len(second))
-	firstIndex, secondIndex := 0, 0
-	for firstIndex < len(first) && secondIndex < len(second) {
-		if compareExactMatches(first[firstIndex], second[secondIndex]) <= 0 {
-			merged = append(merged, first[firstIndex])
-			firstIndex++
-		} else {
-			merged = append(merged, second[secondIndex])
-			secondIndex++
-		}
-	}
-	merged = append(merged, first[firstIndex:]...)
-	merged = append(merged, second[secondIndex:]...)
-	return merged
-}
-
-func splitExactMatches(
 	matches []exactMatch,
-	keep []bool,
-) ([]exactMatch, []exactMatch) {
-	keptCount := 0
-	for _, retained := range keep {
-		if retained {
-			keptCount++
+	states []exactMatchState,
+	discardState exactMatchState,
+) error {
+	position := 0
+	union, hasUnion, err := nextActiveMatchUnion(ctx, matches, states, &position)
+	if err != nil {
+		return err
+	}
+	for index, candidate := range matches {
+		if err := checkFilterContext(ctx, index); err != nil {
+			return err
+		}
+		if states[index] != discardState {
+			continue
+		}
+		for hasUnion && union.tokenEnd <= candidate.tokenStart {
+			union, hasUnion, err = nextActiveMatchUnion(ctx, matches, states, &position)
+			if err != nil {
+				return err
+			}
+		}
+		if hasUnion && union.tokenStart < candidate.tokenEnd {
+			continue
+		}
+		states[index] = exactMatchRestored
+	}
+	for index, state := range states {
+		if state == exactMatchRestored {
+			states[index] = exactMatchActive
 		}
 	}
-	partitioned := make([]exactMatch, len(matches))
-	kept := partitioned[:keptCount:keptCount]
-	discarded := partitioned[keptCount:]
-	keptIndex, discardedIndex := 0, 0
-	for index, match := range matches {
-		if keep[index] {
-			kept[keptIndex] = match
-			keptIndex++
-		} else {
-			discarded[discardedIndex] = match
-			discardedIndex++
+	return nil
+}
+
+func nextActiveMatchUnion(
+	ctx context.Context,
+	matches []exactMatch,
+	states []exactMatchState,
+	position *int,
+) (exactMatch, bool, error) {
+	for *position < len(matches) && states[*position] != exactMatchActive {
+		if err := checkFilterContext(ctx, *position); err != nil {
+			return exactMatch{}, false, err
 		}
+		*position++
 	}
-	return kept, discarded
+	if *position == len(matches) {
+		return exactMatch{}, false, nil
+	}
+	union := matches[*position]
+	*position++
+	for *position < len(matches) {
+		if err := checkFilterContext(ctx, *position); err != nil {
+			return exactMatch{}, false, err
+		}
+		if states[*position] != exactMatchActive {
+			*position++
+			continue
+		}
+		match := matches[*position]
+		if match.tokenStart >= union.tokenEnd {
+			break
+		}
+		if match.tokenEnd > union.tokenEnd {
+			union.tokenEnd = match.tokenEnd
+		}
+		*position++
+	}
+	return union, true, nil
 }
 
 func checkFilterContext(ctx context.Context, operation int) error {
@@ -359,17 +384,30 @@ func filterFalsePositiveMatches(
 	ctx context.Context,
 	engine *matchEngine,
 	matches []exactMatch,
-) ([]exactMatch, error) {
-	kept := matches[:0]
+	states []exactMatchState,
+) error {
 	for index, match := range matches {
 		if err := checkFilterContext(ctx, index); err != nil {
-			return nil, err
+			return err
 		}
-		if engine.rules[match.ruleIndex].Flags&corpus.FlagFalsePositive == 0 {
+		if states[index] != exactMatchActive {
+			continue
+		}
+		if engine.rules[match.ruleIndex].Flags&corpus.FlagFalsePositive != 0 {
+			states[index] = exactMatchDiscardedFinal
+		}
+	}
+	return nil
+}
+
+func compactExactMatches(matches []exactMatch, states []exactMatchState) []exactMatch {
+	kept := matches[:0]
+	for index, match := range matches {
+		if states[index] == exactMatchActive {
 			kept = append(kept, match)
 		}
 	}
-	return kept, nil
+	return kept
 }
 
 func matchOverlap(first, second exactMatch) int {
