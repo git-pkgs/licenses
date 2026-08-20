@@ -2,6 +2,8 @@ module github.com/git-pkgs/licenses
 
 go 1.25.6
 
+toolchain go1.26.6
+
 require (
 	github.com/git-pkgs/magic v0.2.0
 	github.com/git-pkgs/manifests v0.9.0
