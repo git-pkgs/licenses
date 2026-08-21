@@ -1,6 +1,7 @@
 # licenses
 
-Go library for matching license text against ScanCode's license rule corpus.
+Go library and command for matching license text and scanning repositories
+against ScanCode's license rule corpus.
 
 The corpus is embedded in the package. Matching needs no network access, cgo,
 or Python.
@@ -116,6 +117,25 @@ for _, detection := range result.Detections {
 	fmt.Println(detection.Expression)
 }
 ```
+
+Scan a file or directory with the same matcher:
+
+```go
+options := licenses.DefaultScanOptions()
+options.IncludeLegalFiles = true
+report, err := licenses.ScanRepository(ctx, matcher, ".", options)
+if err != nil {
+	return err
+}
+
+for _, file := range report.Files {
+	fmt.Println(file.Path, file.Roles, file.Text)
+}
+```
+
+`IncludeLegalFiles` retains recognized license and notice files when the corpus
+does not produce a match. It also includes their complete text decoded to
+UTF-8.
 
 Matching uses normalized whole-text hashes, exact token sequences, and
 `SPDX-License-Identifier` tag lines. It does not use fuzzy or sequence

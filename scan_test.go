@@ -1,4 +1,4 @@
-package main
+package licenses
 
 import (
 	"context"
@@ -14,7 +14,6 @@ import (
 	"testing"
 	"unicode/utf16"
 
-	licenses "github.com/git-pkgs/licenses"
 	"github.com/git-pkgs/magic"
 )
 
@@ -307,17 +306,17 @@ func TestIdentificationRecordsAndSummary(t *testing.T) {
 	file := fileRecord{Detections: []detectionRecord{
 		{
 			Expression:     "MIT",
-			Identification: licenses.Identified,
+			Identification: Identified,
 			Matches:        []matchRecord{{RuleID: "mit.RULE"}},
 		},
 		{
 			Expression:     "MIT AND LicenseRef-scancode-free-unknown",
-			Identification: licenses.Partial,
+			Identification: Partial,
 			Matches:        []matchRecord{{RuleID: "partial.RULE"}},
 		},
 		{
 			Expression:     "LicenseRef-scancode-unknown-license-reference",
-			Identification: licenses.NoAssertion,
+			Identification: NoAssertion,
 			Matches:        []matchRecord{{RuleID: "unknown.RULE"}},
 		},
 	}}
@@ -515,7 +514,7 @@ func TestScanRepositoryDecodesLicenseText(t *testing.T) {
 	plain := make([]byte, 0, len(prefix)+len(license))
 	plain = append(plain, prefix...)
 	plain = append(plain, license...)
-	matcher, err := licenses.New(licenses.WithMatchedText())
+	matcher, err := New(WithMatchedText())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -575,11 +574,13 @@ func TestScanRepositoryDecodesLicenseText(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "LICENSE")
 			writeTestFile(t, path, test.data)
+			options := defaultTestScanOptions()
+			options.IncludeLegalFiles = true
 			report, err := scanRepository(
 				context.Background(),
 				matcher,
 				path,
-				defaultTestScanOptions(),
+				options,
 				testScannerVersion,
 			)
 			if err != nil {
@@ -592,6 +593,7 @@ func TestScanRepositoryDecodesLicenseText(t *testing.T) {
 			if file.Encoding != test.encoding {
 				t.Errorf("encoding = %q, want %q", file.Encoding, test.encoding)
 			}
+			assertFileText(t, file.Text, plain)
 			digest := sha256.Sum256(test.data)
 			wantSHA256 := hex.EncodeToString(digest[:])
 			if file.SHA256 != wantSHA256 {
@@ -622,6 +624,13 @@ func TestScanRepositoryDecodesLicenseText(t *testing.T) {
 				)
 			}
 		})
+	}
+}
+
+func assertFileText(t *testing.T, got string, want []byte) {
+	t.Helper()
+	if got != string(want) {
+		t.Errorf("text differs from decoded UTF-8 reference")
 	}
 }
 
@@ -663,22 +672,22 @@ func TestScanRepositoryFallsBackToLatin1ForMalformedUTF16(t *testing.T) {
 func TestCalculateLicenseTextCoverage(t *testing.T) {
 	t.Parallel()
 
-	result := licenses.Result{
-		Detections: []licenses.Detection{
+	result := Result{
+		Detections: []Detection{
 			{
-				Matches: []licenses.Match{
-					{Kind: licenses.KindText, Start: 5, End: 40},
-					{Kind: licenses.KindNotice, Start: 30, End: 55},
-					{Kind: licenses.KindReference, Start: 55, End: 100},
-					{Kind: licenses.KindText, Start: -10, End: 10},
-					{Kind: licenses.KindText, Start: 90, End: 120},
-					{Kind: licenses.KindText, Start: 80, End: 70},
+				Matches: []Match{
+					{Kind: KindText, Start: 5, End: 40},
+					{Kind: KindNotice, Start: 30, End: 55},
+					{Kind: KindReference, Start: 55, End: 100},
+					{Kind: KindText, Start: -10, End: 10},
+					{Kind: KindText, Start: 90, End: 120},
+					{Kind: KindText, Start: 80, End: 70},
 				},
 			},
 		},
-		Clues: []licenses.Match{
-			{Kind: licenses.KindNotice, Start: 70, End: 80},
-			{Kind: licenses.KindClue, Start: 55, End: 70},
+		Clues: []Match{
+			{Kind: KindNotice, Start: 70, End: 80},
+			{Kind: KindClue, Start: 55, End: 70},
 		},
 	}
 
@@ -688,7 +697,7 @@ func TestCalculateLicenseTextCoverage(t *testing.T) {
 	if got := calculateLicenseTextCoverage(result, 0); got != 0 {
 		t.Errorf("empty input coverage = %v, want 0", got)
 	}
-	if got := calculateLicenseTextCoverage(licenses.Result{}, 100); got != 0 {
+	if got := calculateLicenseTextCoverage(Result{}, 100); got != 0 {
 		t.Errorf("unmatched input coverage = %v, want 0", got)
 	}
 }
@@ -707,7 +716,7 @@ func TestScanRepositoryDemotesReferenceAcrossMarkdownBlocks(t *testing.T) {
 			"[Apache 2](https://opensource.org/licenses/Apache-2.0).\n",
 	)
 	writeTestFile(t, filepath.Join(root, "README.md"), readme)
-	matcher, err := licenses.New(licenses.WithMatchedText())
+	matcher, err := New(WithMatchedText())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -735,7 +744,7 @@ func TestScanRepositoryDemotesReferenceAcrossMarkdownBlocks(t *testing.T) {
 	if !ok {
 		t.Fatalf("clues = %#v, want ruby_15.RULE", report.Files[0].Clues)
 	}
-	if clue.Kind != licenses.KindReference || clue.Score != 80 {
+	if clue.Kind != KindReference || clue.Score != 80 {
 		t.Errorf("ruby clue = %#v, want relevance-80 reference", clue)
 	}
 	if got := string(readme[clue.Start:clue.End]); got != "ruby>.\n\n## License" {
@@ -834,7 +843,7 @@ func TestApplyScanPolicy(t *testing.T) {
 		name       string
 		path       string
 		text       string
-		kind       licenses.Kind
+		kind       Kind
 		score      float64
 		detections int
 		clues      int
@@ -958,7 +967,7 @@ func TestApplyScanPolicy(t *testing.T) {
 			name:       "notice rule",
 			path:       "README.md",
 			text:       "Ruby\n\nLicense",
-			kind:       licenses.KindNotice,
+			kind:       KindNotice,
 			detections: 1,
 		},
 	}
@@ -966,7 +975,7 @@ func TestApplyScanPolicy(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			kind := test.kind
 			if kind == "" {
-				kind = licenses.KindReference
+				kind = KindReference
 			}
 			score := test.score
 			if score == 0 {
@@ -974,9 +983,9 @@ func TestApplyScanPolicy(t *testing.T) {
 			}
 			start := strings.Index(test.text, "Ruby")
 			end := strings.LastIndex(test.text, "License") + len("License")
-			result := licenses.Result{Detections: []licenses.Detection{{
+			result := Result{Detections: []Detection{{
 				Expression: "Ruby",
-				Matches: []licenses.Match{{
+				Matches: []Match{{
 					RuleID:  "ruby.RULE",
 					Kind:    kind,
 					Score:   score,
@@ -1084,8 +1093,8 @@ func TestLegalFileNames(t *testing.T) {
 		"NOTICES",
 		"NOTICES.txt",
 	} {
-		if !isLegalFile(filePath) {
-			t.Errorf("isLegalFile(%q) = false, want true", filePath)
+		if len(LegalFileRoles(filePath)) == 0 {
+			t.Errorf("LegalFileRoles(%q) is empty, want a legal-file role", filePath)
 		}
 	}
 }
@@ -1105,12 +1114,12 @@ func TestLegalFileRoles(t *testing.T) {
 		{path: "src/source.go", want: []string{}},
 	}
 	for _, test := range tests {
-		got := legalFileRoles(test.path)
+		got := LegalFileRoles(test.path)
 		if !slices.Equal(got, test.want) {
-			t.Errorf("legalFileRoles(%q) = %#v, want %#v", test.path, got, test.want)
+			t.Errorf("LegalFileRoles(%q) = %#v, want %#v", test.path, got, test.want)
 		}
 		if got == nil {
-			t.Errorf("legalFileRoles(%q) returned nil, want an empty or populated array", test.path)
+			t.Errorf("LegalFileRoles(%q) returned nil, want an empty or populated array", test.path)
 		}
 	}
 }
@@ -1137,7 +1146,7 @@ func TestScanFileEnforcesSizeAfterDiscovery(t *testing.T) {
 		context.Background(),
 		nil,
 		discovery.tasks[0],
-		options.MaxFileSize,
+		options,
 	)
 	if !outcome.tooLarge {
 		t.Fatalf("outcome = %#v, want tooLarge", outcome)
@@ -1197,11 +1206,8 @@ func TestScanRepositoryRecordsCandidateLimit(t *testing.T) {
 	if len(report.Errors) != 1 {
 		t.Fatalf("errors = %#v, want one", report.Errors)
 	}
-	if !strings.Contains(report.Errors[0].Error, licenses.ErrTooManyMatches.Error()) {
+	if !strings.Contains(report.Errors[0].Error, ErrTooManyMatches.Error()) {
 		t.Errorf("error = %q, want candidate limit", report.Errors[0].Error)
-	}
-	if reportExitCode(report) != exitScanErrors {
-		t.Errorf("exit code = %d, want %d", reportExitCode(report), exitScanErrors)
 	}
 }
 
@@ -1432,9 +1438,9 @@ func TestValidateScanOptions(t *testing.T) {
 	}
 }
 
-func newTestMatcher(t *testing.T) *licenses.Matcher {
+func newTestMatcher(t *testing.T) *Matcher {
 	t.Helper()
-	matcher, err := licenses.New()
+	matcher, err := New()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1452,7 +1458,7 @@ func defaultTestScanOptions() scanOptions {
 
 func projectLicense(t *testing.T) []byte {
 	t.Helper()
-	data, err := os.ReadFile("../../LICENSE")
+	data, err := os.ReadFile("LICENSE")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1505,7 +1511,7 @@ func hasFile(files []fileRecord, path string) bool {
 	return false
 }
 
-func findRuleMatch(result licenses.Result, ruleID string) (licenses.Match, bool) {
+func findRuleMatch(result Result, ruleID string) (Match, bool) {
 	for _, detection := range result.Detections {
 		for _, match := range detection.Matches {
 			if match.RuleID == ruleID {
@@ -1513,7 +1519,7 @@ func findRuleMatch(result licenses.Result, ruleID string) (licenses.Match, bool)
 			}
 		}
 	}
-	return licenses.Match{}, false
+	return Match{}, false
 }
 
 func findRecordMatch(file fileRecord, ruleID string) (matchRecord, bool) {
