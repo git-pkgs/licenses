@@ -55,6 +55,7 @@ func BenchmarkScanRepository(b *testing.B) {
 			matcher,
 			root,
 			options,
+			testScannerVersion,
 		)
 		if err != nil {
 			b.Fatal(err)
@@ -81,6 +82,7 @@ func BenchmarkScanRepositories(b *testing.B) {
 				matcher,
 				root,
 				options,
+				testScannerVersion,
 			)
 			if err != nil {
 				b.Fatal(err)
@@ -92,6 +94,7 @@ func BenchmarkScanRepositories(b *testing.B) {
 					matcher,
 					root,
 					options,
+					testScannerVersion,
 				)
 				if err != nil {
 					b.Fatal(err)

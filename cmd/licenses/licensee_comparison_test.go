@@ -86,6 +86,7 @@ func TestCompareLicenseeRepositories(t *testing.T) {
 			matcher,
 			root,
 			options,
+			testScannerVersion,
 		)
 		if err != nil {
 			t.Fatalf("scan %s: %v", root, err)
