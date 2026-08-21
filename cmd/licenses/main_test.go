@@ -65,6 +65,9 @@ func TestRunJSON(t *testing.T) {
 	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
 		t.Fatalf("decode output: %v\n%s", err, stdout.String())
 	}
+	if strings.Contains(stdout.String(), `"text":`) {
+		t.Errorf("default JSON contains legal file text:\n%s", stdout.String())
+	}
 	if report.Root != "../../LICENSE" {
 		t.Errorf("root = %q, want ../../LICENSE", report.Root)
 	}
