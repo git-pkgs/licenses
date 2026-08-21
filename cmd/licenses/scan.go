@@ -306,6 +306,9 @@ func scanRepository(
 				Reason: skipReasonSize,
 			})
 		case outcome.scanned:
+			if len(outcome.result.Detections) == 0 && len(outcome.result.Clues) == 0 {
+				continue
+			}
 			file := makeFileRecord(
 				outcome.task.display,
 				outcome.bytes,
@@ -322,9 +325,6 @@ func scanRepository(
 			}
 			if len(file.Clues) != 0 {
 				report.Summary.FilesWithClues++
-			}
-			if len(file.Detections) == 0 && len(file.Clues) == 0 {
-				continue
 			}
 			report.Files = append(report.Files, file)
 			addExpressionRecords(expressions, file)
