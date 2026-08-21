@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"cmp"
 	"context"
+	"crypto/sha256"
 	"encoding/binary"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -34,10 +36,13 @@ const (
 	maxReadPreallocate      = 16 << 20
 	utf8BOMSize             = 3
 	minimumMarkerLength     = 2
+	legalRoleCount          = 2
+	percentageScale         = 100
 	encodingUTF8            = "utf-8"
 	encodingUTF16LE         = "utf-16le"
 	encodingUTF16BE         = "utf-16be"
 	encodingLatin1          = "iso-8859-1"
+	scannerName             = "git-pkgs/licenses"
 
 	skipReasonBinary              = "binary"
 	skipReasonConfiguredDirectory = "configured-directory"
@@ -91,6 +96,7 @@ type scanReport struct {
 	Schema      int                `json:"schema"`
 	Root        string             `json:"root"`
 	Scope       string             `json:"scope"`
+	Scanner     scannerRecord      `json:"scanner"`
 	Corpus      corpusRecord       `json:"corpus"`
 	Summary     scanSummary        `json:"summary"`
 	Declared    []declaredRecord   `json:"declared"`
@@ -98,6 +104,11 @@ type scanReport struct {
 	Files       []fileRecord       `json:"files"`
 	Skipped     []skipRecord       `json:"skipped"`
 	Errors      []scanErrorRecord  `json:"errors"`
+}
+
+type scannerRecord struct {
+	Name    string `json:"name"`
+	Version string `json:"version"`
 }
 
 type corpusRecord struct {
@@ -126,6 +137,7 @@ type scanSummary struct {
 type expressionRecord struct {
 	Expression     string                  `json:"expression"`
 	Identification licenses.Identification `json:"identification"`
+	Root           bool                    `json:"root"`
 	Files          int                     `json:"files"`
 	Matches        int                     `json:"matches"`
 }
@@ -140,7 +152,9 @@ type declaredRecord struct {
 type fileRecord struct {
 	Path                string            `json:"path"`
 	Size                int64             `json:"size"`
+	SHA256              string            `json:"sha256"`
 	Encoding            string            `json:"encoding"`
+	Roles               []string          `json:"roles"`
 	LicenseTextCoverage float64           `json:"license_text_coverage"`
 	Detections          []detectionRecord `json:"detections"`
 	Clues               []matchRecord     `json:"clues"`
@@ -188,6 +202,7 @@ type fileOutcome struct {
 	binary              bool
 	tooLarge            bool
 	encoding            string
+	sha256              string
 	licenseTextCoverage float64
 	err                 error
 }
@@ -219,6 +234,7 @@ func scanRepository(
 	matcher *licenses.Matcher,
 	root string,
 	options scanOptions,
+	scannerVersion string,
 ) (scanReport, error) {
 	if matcher == nil {
 		return scanReport{}, errors.New("nil matcher")
@@ -241,6 +257,10 @@ func scanRepository(
 		Files:    make([]fileRecord, 0),
 		Skipped:  make([]skipRecord, 0),
 		Errors:   make([]scanErrorRecord, 0),
+		Scanner: scannerRecord{
+			Name:    scannerName,
+			Version: scannerVersion,
+		},
 		Corpus: corpusRecord{
 			Version:      corpus.Version,
 			RuleCount:    corpus.RuleCount,
@@ -289,7 +309,9 @@ func scanRepository(
 			file := makeFileRecord(
 				outcome.task.display,
 				outcome.bytes,
+				outcome.sha256,
 				outcome.encoding,
+				legalFileRoles(outcome.task.policyPath),
 				outcome.licenseTextCoverage,
 				outcome.result,
 			)
@@ -693,12 +715,18 @@ func scanFile(
 	applyScanPolicy(task.policyPath, decoded.data, &result)
 	licenseTextCoverage := calculateLicenseTextCoverage(result, len(decoded.data))
 	remapResultOffsets(&result, decoded)
+	checksum := ""
+	if len(result.Detections) != 0 || len(result.Clues) != 0 {
+		digest := sha256.Sum256(data)
+		checksum = hex.EncodeToString(digest[:])
+	}
 	return fileOutcome{
 		task:                task,
 		result:              result,
 		bytes:               int64(len(data)),
 		scanned:             true,
 		encoding:            decoded.encoding,
+		sha256:              checksum,
 		licenseTextCoverage: licenseTextCoverage,
 	}
 }
@@ -865,14 +893,18 @@ func remapResultOffsets(result *licenses.Result, decoded decodedText) {
 func makeFileRecord(
 	path string,
 	size int64,
+	checksum string,
 	encoding string,
+	roles []string,
 	licenseTextCoverage float64,
 	result licenses.Result,
 ) fileRecord {
 	file := fileRecord{
 		Path:                path,
 		Size:                size,
+		SHA256:              checksum,
 		Encoding:            encoding,
+		Roles:               roles,
 		LicenseTextCoverage: licenseTextCoverage,
 	}
 	file.Detections = make([]detectionRecord, 0, len(result.Detections))
@@ -945,7 +977,7 @@ func calculateLicenseTextCoverage(result licenses.Result, inputLength int) float
 		current = next
 	}
 	covered += current.end - current.start
-	return float64(covered) / float64(inputLength) * 100
+	return float64(covered) / float64(inputLength) * percentageScale
 }
 
 func makeMatchRecord(match licenses.Match) matchRecord {
@@ -1098,16 +1130,23 @@ func isListItem(line []byte) bool {
 }
 
 func isLegalFile(filePath string) bool {
+	return len(legalFileRoles(filePath)) != 0
+}
+
+func legalFileRoles(filePath string) []string {
 	cleaned := filepath.ToSlash(filePath)
 	parts := strings.Split(cleaned, "/")
+	licenseRole := false
 	for _, directory := range parts[:len(parts)-1] {
 		switch strings.ToLower(directory) {
 		case "license", "licenses", "licence", "licences":
-			return true
+			licenseRole = true
 		}
 	}
 
 	name := strings.ToLower(pathpkg.Base(cleaned))
+	noticeRole := hasLegalNamePrefix(name, "notices") ||
+		hasLegalNamePrefix(name, "notice")
 	for _, prefix := range []string{
 		"licenses",
 		"license",
@@ -1115,16 +1154,23 @@ func isLegalFile(filePath string) bool {
 		"licence",
 		"copying",
 		"mit-license",
-		"notices",
-		"notice",
 		"copyright",
 		"unlicense",
 	} {
 		if hasLegalNamePrefix(name, prefix) {
-			return true
+			licenseRole = true
+			break
 		}
 	}
-	return false
+
+	roles := make([]string, 0, legalRoleCount)
+	if licenseRole {
+		roles = append(roles, "license")
+	}
+	if noticeRole {
+		roles = append(roles, "notice")
+	}
+	return roles
 }
 
 func hasLegalNamePrefix(name, prefix string) bool {
@@ -1166,6 +1212,7 @@ func compareMatchRecords(first, second matchRecord) int {
 }
 
 func addExpressionRecords(expressions map[string]*expressionRecord, file fileRecord) {
+	root := isRootExpressionFile(file)
 	for _, detection := range file.Detections {
 		record := expressions[detection.Expression]
 		if record == nil {
@@ -1175,9 +1222,20 @@ func addExpressionRecords(expressions map[string]*expressionRecord, file fileRec
 			}
 			expressions[detection.Expression] = record
 		}
+		record.Root = record.Root || root
 		record.Files++
 		record.Matches += len(detection.Matches)
 	}
+}
+
+func isRootExpressionFile(file fileRecord) bool {
+	return pathDepth(file.Path) == 1 &&
+		(len(file.Roles) != 0 || isReadmeFile(file.Path))
+}
+
+func isReadmeFile(filePath string) bool {
+	name := strings.ToLower(pathpkg.Base(filepath.ToSlash(filePath)))
+	return name == "readme" || strings.HasPrefix(name, "readme.")
 }
 
 func addIdentificationSummary(

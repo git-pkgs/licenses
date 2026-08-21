@@ -2,7 +2,10 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/binary"
+	"encoding/hex"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -14,6 +17,8 @@ import (
 	licenses "github.com/git-pkgs/licenses"
 	"github.com/git-pkgs/magic"
 )
+
+const testScannerVersion = "test-version"
 
 func TestScanRepository(t *testing.T) {
 	t.Parallel()
@@ -42,6 +47,7 @@ func TestScanRepository(t *testing.T) {
 			Workers:     2,
 			SkipDirs:    map[string]bool{"ignored": true},
 		},
+		testScannerVersion,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -95,6 +101,34 @@ func TestScanRepository(t *testing.T) {
 	if report.Corpus.RuleCount == 0 || report.Corpus.SourceCommit == "" {
 		t.Errorf("corpus = %#v, want populated metadata", report.Corpus)
 	}
+	if report.Scanner != (scannerRecord{Name: scannerName, Version: testScannerVersion}) {
+		t.Errorf("scanner = %#v, want name and test version", report.Scanner)
+	}
+}
+
+func TestScanRepositoryScannerMetadataAllowsEmptyVersion(t *testing.T) {
+	t.Parallel()
+
+	report, err := scanRepository(
+		context.Background(),
+		newTestMatcher(t),
+		t.TempDir(),
+		defaultTestScanOptions(),
+		"",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Scanner != (scannerRecord{Name: scannerName}) {
+		t.Errorf("scanner = %#v, want name and empty version", report.Scanner)
+	}
+	encoded, err := json.Marshal(report.Scanner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(encoded) != `{"name":"git-pkgs/licenses","version":""}` {
+		t.Errorf("scanner JSON = %s", encoded)
+	}
 }
 
 func TestScanRepositoryDeclaredLicenses(t *testing.T) {
@@ -130,6 +164,7 @@ func TestScanRepositoryDeclaredLicenses(t *testing.T) {
 		newTestMatcher(t),
 		root,
 		defaultTestScanOptions(),
+		testScannerVersion,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -181,6 +216,7 @@ func TestScanExplicitManifestDeclaredLicense(t *testing.T) {
 		newTestMatcher(t),
 		manifest,
 		defaultTestScanOptions(),
+		testScannerVersion,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -202,6 +238,7 @@ func TestScanExplicitMalformedManifestReportsError(t *testing.T) {
 		newTestMatcher(t),
 		manifest,
 		defaultTestScanOptions(),
+		testScannerVersion,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -242,6 +279,7 @@ func TestScanRepositorySkipsDetectedBinary(t *testing.T) {
 		newTestMatcher(t),
 		root,
 		defaultTestScanOptions(),
+		testScannerVersion,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -306,6 +344,56 @@ func TestIdentificationRecordsAndSummary(t *testing.T) {
 	}
 }
 
+func TestExpressionRootClassification(t *testing.T) {
+	t.Parallel()
+
+	expressions := make(map[string]*expressionRecord)
+	for _, file := range []fileRecord{
+		{
+			Path:  "nested/LICENSE",
+			Roles: []string{"license"},
+			Detections: []detectionRecord{{
+				Expression: "MIT",
+				Matches:    []matchRecord{{RuleID: "nested.RULE"}},
+			}},
+		},
+		{
+			Path:  "LICENSE",
+			Roles: []string{"license"},
+			Detections: []detectionRecord{{
+				Expression: "MIT",
+				Matches:    []matchRecord{{RuleID: "root.RULE"}},
+			}},
+		},
+		{
+			Path: "README.md",
+			Detections: []detectionRecord{{
+				Expression: "Apache-2.0",
+				Matches:    []matchRecord{{RuleID: "readme.RULE"}},
+			}},
+		},
+		{
+			Path: "source.go",
+			Detections: []detectionRecord{{
+				Expression: "BSD-2-Clause",
+				Matches:    []matchRecord{{RuleID: "source.RULE"}},
+			}},
+		},
+	} {
+		addExpressionRecords(expressions, file)
+	}
+
+	if record := expressions["MIT"]; record == nil || !record.Root || record.Files != 2 {
+		t.Errorf("MIT expression = %#v, want root with two files", record)
+	}
+	if record := expressions["Apache-2.0"]; record == nil || !record.Root {
+		t.Errorf("Apache expression = %#v, want root README expression", record)
+	}
+	if record := expressions["BSD-2-Clause"]; record == nil || record.Root {
+		t.Errorf("BSD expression = %#v, want ordinary-file expression", record)
+	}
+}
+
 func TestScanRepositoryFollowsExplicitRootSymlinks(t *testing.T) {
 	t.Parallel()
 
@@ -323,7 +411,13 @@ func TestScanRepositoryFollowsExplicitRootSymlinks(t *testing.T) {
 
 	options := defaultTestScanOptions()
 	for _, path := range []string{directoryLink, fileLink} {
-		report, err := scanRepository(context.Background(), newTestMatcher(t), path, options)
+		report, err := scanRepository(
+			context.Background(),
+			newTestMatcher(t),
+			path,
+			options,
+			testScannerVersion,
+		)
 		if err != nil {
 			t.Fatalf("scan %s: %v", path, err)
 		}
@@ -352,6 +446,7 @@ func TestScanRepositorySkipsTreeSymlinks(t *testing.T) {
 		newTestMatcher(t),
 		root,
 		defaultTestScanOptions(),
+		testScannerVersion,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -374,7 +469,13 @@ func TestScanRepositoryAllScopeIncludesDefaultSkips(t *testing.T) {
 	options := defaultTestScanOptions()
 	options.NoDefaultSkip = true
 
-	report, err := scanRepository(context.Background(), newTestMatcher(t), root, options)
+	report, err := scanRepository(
+		context.Background(),
+		newTestMatcher(t),
+		root,
+		options,
+		testScannerVersion,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -479,6 +580,7 @@ func TestScanRepositoryDecodesLicenseText(t *testing.T) {
 				matcher,
 				path,
 				defaultTestScanOptions(),
+				testScannerVersion,
 			)
 			if err != nil {
 				t.Fatal(err)
@@ -489,6 +591,11 @@ func TestScanRepositoryDecodesLicenseText(t *testing.T) {
 			file := report.Files[0]
 			if file.Encoding != test.encoding {
 				t.Errorf("encoding = %q, want %q", file.Encoding, test.encoding)
+			}
+			digest := sha256.Sum256(test.data)
+			wantSHA256 := hex.EncodeToString(digest[:])
+			if file.SHA256 != wantSHA256 {
+				t.Errorf("sha256 = %q, want %q", file.SHA256, wantSHA256)
 			}
 			match, ok := findRecordMatch(file, "mit.LICENSE")
 			if !ok {
@@ -537,6 +644,7 @@ func TestScanRepositoryFallsBackToLatin1ForMalformedUTF16(t *testing.T) {
 		newTestMatcher(t),
 		path,
 		defaultTestScanOptions(),
+		testScannerVersion,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -609,6 +717,7 @@ func TestScanRepositoryDemotesReferenceAcrossMarkdownBlocks(t *testing.T) {
 		matcher,
 		root,
 		defaultTestScanOptions(),
+		testScannerVersion,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -654,6 +763,7 @@ func TestScanRepositoryDemotesReferenceAcrossMarkdownTableRows(t *testing.T) {
 		newTestMatcher(t),
 		root,
 		defaultTestScanOptions(),
+		testScannerVersion,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -696,6 +806,7 @@ func TestScanRepositoryKeepsRubyAlternativeWithinMarkdownBlock(t *testing.T) {
 		newTestMatcher(t),
 		root,
 		defaultTestScanOptions(),
+		testScannerVersion,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -903,6 +1014,7 @@ func TestScanRepositoryKeepsReferenceInExplicitLicensesFile(t *testing.T) {
 		newTestMatcher(t),
 		filePath,
 		defaultTestScanOptions(),
+		testScannerVersion,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -943,6 +1055,7 @@ func TestScanPolicyUsesDecodedText(t *testing.T) {
 				newTestMatcher(t),
 				filePath,
 				defaultTestScanOptions(),
+				testScannerVersion,
 			)
 			if err != nil {
 				t.Fatal(err)
@@ -973,6 +1086,31 @@ func TestLegalFileNames(t *testing.T) {
 	} {
 		if !isLegalFile(filePath) {
 			t.Errorf("isLegalFile(%q) = false, want true", filePath)
+		}
+	}
+}
+
+func TestLegalFileRoles(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		path string
+		want []string
+	}{
+		{path: "LICENSE", want: []string{"license"}},
+		{path: "copying.txt", want: []string{"license"}},
+		{path: "NOTICES.md", want: []string{"notice"}},
+		{path: "licenses/component.txt", want: []string{"license"}},
+		{path: "LICENSES/NOTICE.txt", want: []string{"license", "notice"}},
+		{path: "src/source.go", want: []string{}},
+	}
+	for _, test := range tests {
+		got := legalFileRoles(test.path)
+		if !slices.Equal(got, test.want) {
+			t.Errorf("legalFileRoles(%q) = %#v, want %#v", test.path, got, test.want)
+		}
+		if got == nil {
+			t.Errorf("legalFileRoles(%q) returned nil, want an empty or populated array", test.path)
 		}
 	}
 }
@@ -1025,6 +1163,7 @@ func TestScanRepositoryRecordsUnreadableFile(t *testing.T) {
 		newTestMatcher(t),
 		root,
 		defaultTestScanOptions(),
+		testScannerVersion,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -1050,6 +1189,7 @@ func TestScanRepositoryRecordsCandidateLimit(t *testing.T) {
 		newTestMatcher(t),
 		path,
 		options,
+		testScannerVersion,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -1156,7 +1296,13 @@ func TestScanRepositoryCancelled(t *testing.T) {
 		MaxFileSize: defaultMaxFileSize,
 		Workers:     1,
 	}
-	_, err := scanRepository(ctx, newTestMatcher(t), "../../LICENSE", options)
+	_, err := scanRepository(
+		ctx,
+		newTestMatcher(t),
+		"../../LICENSE",
+		options,
+		testScannerVersion,
+	)
 	if err != context.Canceled {
 		t.Fatalf("error = %v, want context.Canceled", err)
 	}

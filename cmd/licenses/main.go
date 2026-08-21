@@ -133,7 +133,7 @@ func run(
 	if err != nil {
 		return exitFatal, err
 	}
-	report, err := scanRepository(ctx, matcher, root, options)
+	report, err := scanRepository(ctx, matcher, root, options, version)
 	if err != nil {
 		return exitFatal, err
 	}

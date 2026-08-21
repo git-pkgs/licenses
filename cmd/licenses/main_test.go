@@ -3,9 +3,12 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -68,6 +71,9 @@ func TestRunJSON(t *testing.T) {
 	if report.Schema != reportSchemaVersion {
 		t.Errorf("schema = %d, want %d", report.Schema, reportSchemaVersion)
 	}
+	if report.Scanner != (scannerRecord{Name: scannerName, Version: version}) {
+		t.Errorf("scanner = %#v, want CLI name and version", report.Scanner)
+	}
 	if report.Summary.FilesScanned != 1 {
 		t.Errorf("files scanned = %d, want 1", report.Summary.FilesScanned)
 	}
@@ -78,6 +84,13 @@ func TestRunJSON(t *testing.T) {
 	}
 	if len(report.Files) != 1 || !hasMITExpression(report.Files[0]) {
 		t.Fatalf("files = %#v, want MIT detection", report.Files)
+	}
+	digest := sha256.Sum256(projectLicense(t))
+	if report.Files[0].SHA256 != hex.EncodeToString(digest[:]) {
+		t.Errorf("sha256 = %q, want original LICENSE hash", report.Files[0].SHA256)
+	}
+	if !slices.Equal(report.Files[0].Roles, []string{"license"}) {
+		t.Errorf("roles = %#v, want license", report.Files[0].Roles)
 	}
 	if report.Files[0].LicenseTextCoverage <= 0 ||
 		report.Files[0].LicenseTextCoverage > 100 {
@@ -97,7 +110,8 @@ func TestRunJSON(t *testing.T) {
 		)
 	}
 	if len(report.Expressions) != 1 ||
-		report.Expressions[0].Identification != licenses.Identified {
+		report.Expressions[0].Identification != licenses.Identified ||
+		!report.Expressions[0].Root {
 		t.Errorf("expressions = %#v, want identified", report.Expressions)
 	}
 	if report.Files[0].Detections[0].Matches[0].Matched == "" {
@@ -115,12 +129,48 @@ func TestRunJSON(t *testing.T) {
 	}
 }
 
+func TestRunJSONReportsEmptyRolesAndNonRootExpression(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "source.txt")
+	writeTestFile(t, path, projectLicense(t))
+	var stdout bytes.Buffer
+	exitCode, err := run(
+		context.Background(),
+		[]string{"-json", path},
+		&stdout,
+		&bytes.Buffer{},
+		false,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if exitCode != exitSuccess {
+		t.Fatalf("exit code = %d, want %d", exitCode, exitSuccess)
+	}
+	var report scanReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Files) != 1 || report.Files[0].Roles == nil || len(report.Files[0].Roles) != 0 {
+		t.Fatalf("files = %#v, want one file with empty roles", report.Files)
+	}
+	if len(report.Expressions) != 1 || report.Expressions[0].Root {
+		t.Errorf("expressions = %#v, want one non-root expression", report.Expressions)
+	}
+	if !strings.Contains(stdout.String(), `"roles": []`) ||
+		!strings.Contains(stdout.String(), `"root": false`) {
+		t.Errorf("JSON does not preserve empty roles and false root:\n%s", stdout.String())
+	}
+}
+
 func TestRunJSONIsDeterministicAcrossWorkerCounts(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
 	writeTestFile(t, filepath.Join(root, "a", "LICENSE"), projectLicense(t))
 	writeTestFile(t, filepath.Join(root, "b", "LICENSE"), projectLicense(t))
+	writeTestFile(t, filepath.Join(root, "licenses", "NOTICE"), projectLicense(t))
 	writeTestFile(t, filepath.Join(root, "binary"), []byte("data\x00data"))
 
 	var first bytes.Buffer
@@ -150,6 +200,20 @@ func TestRunJSONIsDeterministicAcrossWorkerCounts(t *testing.T) {
 	}
 	if !bytes.Equal(first.Bytes(), second.Bytes()) {
 		t.Errorf("JSON differs by worker count:\n%s\n%s", first.String(), second.String())
+	}
+	var report scanReport
+	if err := json.Unmarshal(first.Bytes(), &report); err != nil {
+		t.Fatal(err)
+	}
+	foundNotice := false
+	for _, file := range report.Files {
+		if file.Path == "licenses/NOTICE" &&
+			slices.Equal(file.Roles, []string{"license", "notice"}) {
+			foundNotice = true
+		}
+	}
+	if !foundNotice {
+		t.Errorf("files = %#v, want NOTICE with license, notice roles", report.Files)
 	}
 }
 
