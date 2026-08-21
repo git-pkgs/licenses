@@ -99,8 +99,11 @@ jobs:
           -version-file CORPUS_VERSION
           -output regenerated-corpus.bin.gz
 
-      - name: Compare corpus
-        run: cmp internal/corpus/corpus.bin.gz regenerated-corpus.bin.gz
+      - name: Compare corpus contents
+        run: |
+          gzip -dc internal/corpus/corpus.bin.gz > tracked-corpus.bin
+          gzip -dc regenerated-corpus.bin.gz > regenerated-corpus.bin
+          cmp tracked-corpus.bin regenerated-corpus.bin
 
       - name: Check exact conformance baseline
         env:
