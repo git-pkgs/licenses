@@ -129,12 +129,13 @@ if err != nil {
 }
 
 for _, file := range report.Files {
-	fmt.Println(file.Path, file.Detections)
+	fmt.Println(file.Path, file.Roles, file.Text)
 }
 ```
 
 `IncludeLegalFiles` retains recognized license and notice files when the corpus
-does not produce a match.
+does not produce a match. It also includes their complete text decoded to
+UTF-8.
 
 Matching uses normalized whole-text hashes, exact token sequences, and
 `SPDX-License-Identifier` tag lines. It does not use fuzzy or sequence

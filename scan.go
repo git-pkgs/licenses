@@ -204,6 +204,7 @@ type FileRecord struct {
 	Size                int64             `json:"size"`
 	SHA256              string            `json:"sha256"`
 	Encoding            string            `json:"encoding"`
+	Text                string            `json:"text,omitempty"`
 	Roles               []string          `json:"roles"`
 	LicenseTextCoverage float64           `json:"license_text_coverage"`
 	Detections          []DetectionRecord `json:"detections"`
@@ -270,6 +271,7 @@ type fileOutcome struct {
 	tooLarge            bool
 	encoding            string
 	sha256              string
+	text                string
 	licenseTextCoverage float64
 	err                 error
 }
@@ -379,6 +381,7 @@ func scanRepository(
 				outcome.bytes,
 				outcome.sha256,
 				outcome.encoding,
+				outcome.text,
 				outcome.roles,
 				outcome.licenseTextCoverage,
 				outcome.result,
@@ -787,6 +790,10 @@ func scanFile(
 		digest := sha256.Sum256(data)
 		checksum = hex.EncodeToString(digest[:])
 	}
+	text := ""
+	if options.IncludeLegalFiles && len(roles) != 0 {
+		text = string(decoded.data)
+	}
 	return fileOutcome{
 		task:                task,
 		result:              result,
@@ -795,6 +802,7 @@ func scanFile(
 		scanned:             true,
 		encoding:            decoded.encoding,
 		sha256:              checksum,
+		text:                text,
 		licenseTextCoverage: licenseTextCoverage,
 	}
 }
@@ -963,6 +971,7 @@ func makeFileRecord(
 	size int64,
 	checksum string,
 	encoding string,
+	text string,
 	roles []string,
 	licenseTextCoverage float64,
 	result Result,
@@ -972,6 +981,7 @@ func makeFileRecord(
 		Size:                size,
 		SHA256:              checksum,
 		Encoding:            encoding,
+		Text:                text,
 		Roles:               roles,
 		LicenseTextCoverage: licenseTextCoverage,
 	}

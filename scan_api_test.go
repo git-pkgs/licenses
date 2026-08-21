@@ -54,6 +54,9 @@ func TestScanRepositoryPublicAPI(t *testing.T) {
 	if file.Path != "LICENSE" || file.SHA256 == "" || len(file.Roles) != 1 || file.Roles[0] != "license" {
 		t.Errorf("file = %#v, want hashed license file", file)
 	}
+	if file.Text != "" {
+		t.Errorf("text = %q, want empty without IncludeLegalFiles", file.Text)
+	}
 }
 
 func TestScanRepositoryPublicValidation(t *testing.T) {
@@ -116,6 +119,7 @@ func TestScanRepositoryIncludesUnmatchedLegalFiles(t *testing.T) {
 		wantSHA256 := sha256.Sum256(want.content)
 		if file.Path != want.path || file.Size != int64(len(want.content)) ||
 			file.SHA256 != fmt.Sprintf("%x", wantSHA256) || file.Encoding != "utf-8" ||
+			file.Text != string(want.content) ||
 			len(file.Roles) != 1 || file.Roles[0] != want.role ||
 			len(file.Detections) != 0 || len(file.Clues) != 0 {
 			t.Errorf("file = %#v, want unmatched %s metadata", file, want.role)

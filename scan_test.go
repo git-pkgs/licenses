@@ -574,11 +574,13 @@ func TestScanRepositoryDecodesLicenseText(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "LICENSE")
 			writeTestFile(t, path, test.data)
+			options := defaultTestScanOptions()
+			options.IncludeLegalFiles = true
 			report, err := scanRepository(
 				context.Background(),
 				matcher,
 				path,
-				defaultTestScanOptions(),
+				options,
 				testScannerVersion,
 			)
 			if err != nil {
@@ -591,6 +593,7 @@ func TestScanRepositoryDecodesLicenseText(t *testing.T) {
 			if file.Encoding != test.encoding {
 				t.Errorf("encoding = %q, want %q", file.Encoding, test.encoding)
 			}
+			assertFileText(t, file.Text, plain)
 			digest := sha256.Sum256(test.data)
 			wantSHA256 := hex.EncodeToString(digest[:])
 			if file.SHA256 != wantSHA256 {
@@ -621,6 +624,13 @@ func TestScanRepositoryDecodesLicenseText(t *testing.T) {
 				)
 			}
 		})
+	}
+}
+
+func assertFileText(t *testing.T, got string, want []byte) {
+	t.Helper()
+	if got != string(want) {
+		t.Errorf("text differs from decoded UTF-8 reference")
 	}
 }
 
