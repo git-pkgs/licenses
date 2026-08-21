@@ -1,6 +1,6 @@
-// Package licenses matches byte slices against the ScanCode license rule
-// corpus. Matching is exact after token normalization, so edits within a
-// license can prevent a match.
+// Package licenses matches text and scans repositories against the ScanCode
+// license rule corpus. Matching is exact after token normalization, so edits
+// within a license can prevent a match.
 package licenses
 
 // CorpusInfo identifies the ScanCode corpus used for a result.

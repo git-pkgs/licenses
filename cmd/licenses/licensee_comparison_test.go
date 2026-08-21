@@ -199,7 +199,7 @@ func isComparisonProjectFile(filePath string) bool {
 	if strings.Contains(cleaned, "/") {
 		return false
 	}
-	if isLegalFile(filePath) {
+	if len(licenses.LegalFileRoles(filePath)) != 0 {
 		return true
 	}
 	name := strings.ToLower(pathpkg.Base(cleaned))
