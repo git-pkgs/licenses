@@ -8,12 +8,12 @@ github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/git-pkgs/magic v0.2.0 h1:c7HqVxnP8c88EaVMH0/KraDFVTcmiXckRiSvNZEnvMQ=
 github.com/git-pkgs/magic v0.2.0/go.mod h1:3ndidt+yvFaI1M0aEkkzkOlFnLPkeVQASIUojazcxCI=
-github.com/git-pkgs/manifests v0.9.0 h1:f6BkpuaCQiXShC7DjJCTR4cugXk+H3A5Ax+O43Id0YA=
-github.com/git-pkgs/manifests v0.9.0/go.mod h1:O7cmhyaiWflampqZ22B36i+oW+5qc8l4MnqZ1xm6I60=
+github.com/git-pkgs/manifests v0.10.0 h1:wRYoX8l5mdTxSQ2/99gIByLQPBJUPW2VdrBSX0If2fA=
+github.com/git-pkgs/manifests v0.10.0/go.mod h1:y1p9ICibE2tqveiHJEJZz4mayo+mt6MhaBY3LHHr1mY=
 github.com/git-pkgs/pom v0.1.7 h1:4yKdtw6eyShtjul6bcZdyz7yLQ+jdrYeYkKbskDGi4c=
 github.com/git-pkgs/pom v0.1.7/go.mod h1:ufdMBe1lKzqOeP9IUb9NPZ458xKV8E8NvuyBMxOfwIk=
-github.com/git-pkgs/purl v0.1.16 h1:VAX6tv0hhdTENbkrGMoPZbOAl1Y8U1/ZnzoCsYuNBYM=
-github.com/git-pkgs/purl v0.1.16/go.mod h1:7u7ora8tQdrkS7Auclr5v8dCJdjN4ej6AbrvYZi2b7k=
+github.com/git-pkgs/purl v0.1.17 h1:oRSd8tqllTLl74Wa4WnuqU500hXd9OdUnImOEswQUVE=
+github.com/git-pkgs/purl v0.1.17/go.mod h1:7u7ora8tQdrkS7Auclr5v8dCJdjN4ej6AbrvYZi2b7k=
 github.com/git-pkgs/spdx v0.3.1 h1:58JPY5X9pYpXvnzzZIgehItlBykeOOw52pNc4OBcS+c=
 github.com/git-pkgs/spdx v0.3.1/go.mod h1:cqRoZcvl530s/W+oGNvwjt4ODN8T1W6D/20MUZEFdto=
 github.com/git-pkgs/vers v0.3.1 h1:jy/ht2wIRJI5zQrccm6GTeYr+hGFwe2z8LV1HOr4Wco=
