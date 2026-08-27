@@ -69,7 +69,7 @@ jobs:
         shell: bash
         run: |
           commit="$(sed -n 's/^commit=//p' CORPUS_VERSION)"
-          [[ "$commit" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$commit" =~ ^([0-9a-f]{40}|[0-9a-f]{64})$ ]]
           printf 'commit=%s\n' "$commit" >> "$GITHUB_OUTPUT"
 
       - name: Check out pinned ScanCode corpus

@@ -14,17 +14,51 @@ import (
 func TestReadSourceVersion(t *testing.T) {
 	t.Parallel()
 
-	path := filepath.Join(t.TempDir(), "CORPUS_VERSION")
-	data := []byte("version=1.2.3\ncommit=0123456789abcdef0123456789abcdef01234567\n")
-	if err := os.WriteFile(path, data, fileMode); err != nil {
-		t.Fatal(err)
+	for _, commit := range []string{
+		"0123456789abcdef0123456789abcdef01234567",
+		"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+	} {
+		path := filepath.Join(t.TempDir(), "CORPUS_VERSION")
+		data := []byte("version=1.2.3\ncommit=" + commit + "\n")
+		if err := os.WriteFile(path, data, fileMode); err != nil {
+			t.Fatal(err)
+		}
+		got, err := readSourceVersion(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.Version != "1.2.3" || got.Commit != commit {
+			t.Fatalf("version = %#v", got)
+		}
 	}
-	got, err := readSourceVersion(path)
-	if err != nil {
-		t.Fatal(err)
+}
+
+func TestReadSourceVersionRejectsInvalidCommit(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		commit  string
+		wantErr string
+	}{
+		{name: "short", commit: strings.Repeat("a", 39), wantErr: "commit must be a full 40- or 64-character object ID"},
+		{name: "between hashes", commit: strings.Repeat("a", 41), wantErr: "commit must be a full 40- or 64-character object ID"},
+		{name: "long", commit: strings.Repeat("a", 65), wantErr: "commit must be a full 40- or 64-character object ID"},
+		{name: "non-hex", commit: strings.Repeat("a", 39) + "g", wantErr: "invalid commit"},
 	}
-	if got.Version != "1.2.3" || got.Commit != "0123456789abcdef0123456789abcdef01234567" {
-		t.Fatalf("version = %#v", got)
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "CORPUS_VERSION")
+			data := []byte("version=1.2.3\ncommit=" + test.commit + "\n")
+			if err := os.WriteFile(path, data, fileMode); err != nil {
+				t.Fatal(err)
+			}
+			_, err := readSourceVersion(path)
+			if err == nil || !strings.Contains(err.Error(), test.wantErr) {
+				t.Fatalf("error = %v, want error containing %q", err, test.wantErr)
+			}
+		})
 	}
 }
 
