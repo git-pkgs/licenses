@@ -112,7 +112,7 @@ func readSourceVersion(path string) (sourceVersion, error) {
 			if version.Commit != "" {
 				return sourceVersion{}, fmt.Errorf("%s:%d: duplicate commit", path, lineNumber+1)
 			}
-			version.Commit = strings.TrimSpace(value)
+			version.Commit = strings.ToLower(strings.TrimSpace(value))
 		default:
 			return sourceVersion{}, fmt.Errorf("%s:%d: unknown key %q", path, lineNumber+1, key)
 		}

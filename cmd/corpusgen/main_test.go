@@ -35,8 +35,66 @@ func TestReadSourceVersion(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got.Version != "1.2.3" || got.Commit != test.commit {
+			if got.Version != "1.2.3" || got.Commit != strings.ToLower(test.commit) {
 				t.Fatalf("version = %#v", got)
+			}
+		})
+	}
+}
+
+func TestRunNormalizesUppercaseCommit(t *testing.T) {
+	t.Parallel()
+
+	for _, objectFormat := range []string{"sha1", "sha256"} {
+		t.Run(objectFormat, func(t *testing.T) {
+			base := t.TempDir()
+			root := filepath.Join(base, "scancode")
+			dataRoot := filepath.Join(root, "src", "licensedcode", "data")
+			if err := os.MkdirAll(filepath.Join(dataRoot, "licenses"), directoryMode); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.MkdirAll(filepath.Join(dataRoot, "rules"), directoryMode); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(root, "README"), []byte("fixture\n"), fileMode); err != nil {
+				t.Fatal(err)
+			}
+
+			runGit(t, root, "init", "--object-format="+objectFormat)
+			runGit(t, root, "add", ".")
+			runGit(
+				t,
+				root,
+				"-c", "user.name=Corpus Test",
+				"-c", "user.email=corpus@example.com",
+				"-c", "commit.gpgsign=false",
+				"commit", "-m", "fixture",
+			)
+			commit := strings.TrimSpace(runGit(t, root, "rev-parse", "HEAD"))
+			versionPath := filepath.Join(base, "CORPUS_VERSION")
+			versionData := []byte("version=1.2.3\ncommit=" + strings.ToUpper(commit) + "\n")
+			if err := os.WriteFile(versionPath, versionData, fileMode); err != nil {
+				t.Fatal(err)
+			}
+
+			outputPath := filepath.Join(base, "corpus.bin.gz")
+			if err := run(root, versionPath, outputPath); err != nil {
+				t.Fatal(err)
+			}
+			output, err := os.Open(outputPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			index, readErr := corpus.Read(output)
+			closeErr := output.Close()
+			if readErr != nil {
+				t.Fatal(readErr)
+			}
+			if closeErr != nil {
+				t.Fatal(closeErr)
+			}
+			if index.Info.SourceCommit != commit {
+				t.Fatalf("source commit = %q, want %q", index.Info.SourceCommit, commit)
 			}
 		})
 	}
