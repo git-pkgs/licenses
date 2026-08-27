@@ -14,22 +14,31 @@ import (
 func TestReadSourceVersion(t *testing.T) {
 	t.Parallel()
 
-	for _, commit := range []string{
-		"0123456789abcdef0123456789abcdef01234567",
-		"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-	} {
-		path := filepath.Join(t.TempDir(), "CORPUS_VERSION")
-		data := []byte("version=1.2.3\ncommit=" + commit + "\n")
-		if err := os.WriteFile(path, data, fileMode); err != nil {
-			t.Fatal(err)
-		}
-		got, err := readSourceVersion(path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if got.Version != "1.2.3" || got.Commit != commit {
-			t.Fatalf("version = %#v", got)
-		}
+	tests := []struct {
+		name   string
+		commit string
+	}{
+		{name: "SHA-1 lowercase", commit: "0123456789abcdef0123456789abcdef01234567"},
+		{name: "SHA-1 uppercase", commit: "0123456789ABCDEF0123456789ABCDEF01234567"},
+		{name: "SHA-256 lowercase", commit: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"},
+		{name: "SHA-256 uppercase", commit: "0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "CORPUS_VERSION")
+			data := []byte("version=1.2.3\ncommit=" + test.commit + "\n")
+			if err := os.WriteFile(path, data, fileMode); err != nil {
+				t.Fatal(err)
+			}
+			got, err := readSourceVersion(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.Version != "1.2.3" || got.Commit != test.commit {
+				t.Fatalf("version = %#v", got)
+			}
+		})
 	}
 }
 
