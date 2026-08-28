@@ -21,9 +21,10 @@ import (
 )
 
 const (
-	fileMode         = 0o644
-	directoryMode    = 0o755
-	fullCommitLength = 40
+	fileMode             = 0o644
+	directoryMode        = 0o755
+	sha1ObjectIDLength   = 40
+	sha256ObjectIDLength = 64
 )
 
 type sourceVersion struct {
@@ -111,7 +112,7 @@ func readSourceVersion(path string) (sourceVersion, error) {
 			if version.Commit != "" {
 				return sourceVersion{}, fmt.Errorf("%s:%d: duplicate commit", path, lineNumber+1)
 			}
-			version.Commit = strings.TrimSpace(value)
+			version.Commit = strings.ToLower(strings.TrimSpace(value))
 		default:
 			return sourceVersion{}, fmt.Errorf("%s:%d: unknown key %q", path, lineNumber+1, key)
 		}
@@ -119,8 +120,10 @@ func readSourceVersion(path string) (sourceVersion, error) {
 	if version.Version == "" {
 		return sourceVersion{}, fmt.Errorf("%s: missing version", path)
 	}
-	if len(version.Commit) != fullCommitLength {
-		return sourceVersion{}, fmt.Errorf("%s: commit must be a full 40-character SHA", path)
+	switch len(version.Commit) {
+	case sha1ObjectIDLength, sha256ObjectIDLength:
+	default:
+		return sourceVersion{}, fmt.Errorf("%s: commit must be a full 40- or 64-character object ID", path)
 	}
 	if _, err := hex.DecodeString(version.Commit); err != nil {
 		return sourceVersion{}, fmt.Errorf("%s: invalid commit: %w", path, err)

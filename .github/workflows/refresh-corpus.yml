@@ -48,9 +48,12 @@ jobs:
           version="$(ruby -e 'match = File.read(ARGV.fetch(0)).match(/^version = "([^"]+)"$/); abort "missing version" unless match; puts match[1]' .scancode/pyproject-licensedcode-data.toml)"
           pinned_commit="$(sed -n 's/^commit=//p' CORPUS_VERSION)"
 
-          [[ "$commit" =~ ^[0-9a-f]{40}$ ]]
-          [[ "$pinned_commit" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$commit" =~ ^([0-9a-fA-F]{40}|[0-9a-fA-F]{64})$ ]]
+          [[ "$pinned_commit" =~ ^([0-9a-fA-F]{40}|[0-9a-fA-F]{64})$ ]]
           [[ "$version" =~ ^[0-9A-Za-z][0-9A-Za-z.+-]*$ ]]
+
+          commit="$(printf '%s' "$commit" | tr 'A-F' 'a-f')"
+          pinned_commit="$(printf '%s' "$pinned_commit" | tr 'A-F' 'a-f')"
 
           printf 'commit=%s\n' "$commit" >> "$GITHUB_OUTPUT"
           printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
