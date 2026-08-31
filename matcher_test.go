@@ -65,6 +65,31 @@ func TestMatcherWholeTextHash(t *testing.T) {
 	}
 }
 
+func TestHashMatchesVerifiesCollisionsWithoutRuleTokens(t *testing.T) {
+	t.Parallel()
+
+	matcher := testMatcher(t, false)
+	if len(matcher.engine.ruleTokenLengths) != len(matcher.engine.rules) {
+		t.Fatalf(
+			"token lengths = %d, rules = %d",
+			len(matcher.engine.ruleTokenLengths),
+			len(matcher.engine.rules),
+		)
+	}
+	tokens := matcher.engine.vocabulary.TokenizeIDs([]byte("alpha beta")).IDs
+	hash := hashInputTokens(tokens)
+	matcher.engine.hashes[hash] = []uint32{
+		5, // Same length, different tokens.
+		4, // Matching suffix, different length.
+		2, // Exact token sequence.
+	}
+	got := matcher.engine.hashMatches(tokens)
+	want := []exactMatch{{ruleIndex: 2, tokenEnd: len(tokens)}}
+	if !slices.Equal(got, want) {
+		t.Fatalf("hash matches = %#v, want %#v", got, want)
+	}
+}
+
 func TestMatcherCorpus(t *testing.T) {
 	t.Parallel()
 
@@ -362,7 +387,11 @@ func TestCollectExactMatchesEnforcesCandidateLimit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine := matchEngine{rules: rules, automaton: automaton}
+	engine := matchEngine{
+		rules:            make([]matchRule, len(rules)),
+		ruleTokenLengths: []uint32{1, 1},
+		automaton:        automaton,
+	}
 	tokens := make([]tokenize.ID, maxExactMatchCandidates/len(rules)+1)
 	for index := range tokens {
 		tokens[index] = token
@@ -432,17 +461,7 @@ func TestEmbeddedMatcherMatchesCorpusRule(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ruleIndex := -1
-	for index, rule := range matcher.engine.rules {
-		if rule.ID == "mit.LICENSE" {
-			ruleIndex = index
-			break
-		}
-	}
-	if ruleIndex < 0 {
-		t.Fatal("mit.LICENSE is absent")
-	}
-	input := normalizedRuleText(matcher.engine, matcher.engine.rules[ruleIndex])
+	input := embeddedRuleTexts(t, "mit.LICENSE")["mit.LICENSE"]
 	result, err := matcher.Match(context.Background(), input)
 	if err != nil {
 		t.Fatal(err)
@@ -471,9 +490,15 @@ func TestEmbeddedMatcherPreservesSeparateLicenseSections(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	mit := embeddedRuleText(t, matcher, "mit.LICENSE")
-	apache := embeddedRuleText(t, matcher, "apache-2.0.LICENSE")
-	bsd := embeddedRuleText(t, matcher, "bsd-new.LICENSE")
+	texts := embeddedRuleTexts(
+		t,
+		"mit.LICENSE",
+		"apache-2.0.LICENSE",
+		"bsd-new.LICENSE",
+	)
+	mit := texts["mit.LICENSE"]
+	apache := texts["apache-2.0.LICENSE"]
+	bsd := texts["bsd-new.LICENSE"]
 
 	tests := []struct {
 		name        string
@@ -529,16 +554,41 @@ func TestEmbeddedMatcherPreservesSeparateLicenseSections(t *testing.T) {
 	}
 }
 
-func embeddedRuleText(t *testing.T, matcher *Matcher, ruleID string) []byte {
+func embeddedRuleTexts(t testing.TB, ruleIDs ...string) map[string][]byte {
 	t.Helper()
 
-	for _, rule := range matcher.engine.rules {
-		if rule.ID == ruleID {
-			return normalizedRuleText(matcher.engine, rule)
+	index, err := corpus.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	vocabulary, err := tokenize.NewVocabularyFromWords(index.Vocabulary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wanted := make(map[string]struct{}, len(ruleIDs))
+	for _, ruleID := range ruleIDs {
+		wanted[ruleID] = struct{}{}
+	}
+	texts := make(map[string][]byte, len(ruleIDs))
+	for _, rule := range index.Rules {
+		if _, ok := wanted[rule.ID]; ok {
+			texts[rule.ID] = normalizedRuleText(vocabulary, rule)
 		}
 	}
-	t.Fatalf("%s is absent", ruleID)
-	return nil
+	for _, ruleID := range ruleIDs {
+		if _, ok := texts[ruleID]; !ok {
+			t.Fatalf("%s is absent", ruleID)
+		}
+	}
+	return texts
+}
+
+func normalizedRuleText(vocabulary *tokenize.Vocabulary, rule corpus.Rule) []byte {
+	words := make([]string, len(rule.Tokens))
+	for index, token := range rule.Tokens {
+		words[index] = vocabulary.Word(tokenize.ID(token))
+	}
+	return []byte(strings.Join(words, " "))
 }
 
 func resultExpressions(result Result) []string {
@@ -600,6 +650,13 @@ func testMatcher(t *testing.T, matchedText bool) *Matcher {
 			Flags:      corpus.FlagLicenseNotice,
 			Relevance:  100,
 		},
+		{
+			ID:         "f-other.RULE",
+			Expression: "ISC",
+			Tokens:     tokenIDs("alpha reject"),
+			Flags:      corpus.FlagLicenseNotice,
+			Relevance:  100,
+		},
 	}
 	patterns := make([]aho.Pattern, len(rules))
 	for index := range rules {
@@ -620,6 +677,7 @@ func testMatcher(t *testing.T, matchedText bool) *Matcher {
 		Automaton:  automaton,
 		ReportingIDs: map[string]string{
 			"agpl-3.0": "AGPL-3.0",
+			"isc":      "ISC",
 			"mit":      "MIT",
 		},
 	})

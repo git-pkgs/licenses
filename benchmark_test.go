@@ -3,6 +3,7 @@ package licenses
 import (
 	"context"
 	"fmt"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -22,16 +23,33 @@ var (
 )
 
 func BenchmarkMatcherColdStart(b *testing.B) {
+	b.ReportAllocs()
+	// Keep every matcher live through the final GC so retained-B/op measures
+	// the runtime engine rather than transient corpus-decoding memory.
+	matchers := make([]*Matcher, 0, b.N)
+	var before runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	b.ResetTimer()
 	for b.Loop() {
 		index, err := corpus.Load()
 		if err != nil {
 			b.Fatal(err)
 		}
-		benchmarkMatcher, err = newMatcher(index)
+		matcher, err := newMatcher(index)
 		if err != nil {
 			b.Fatal(err)
 		}
+		matchers = append(matchers, matcher)
 	}
+	b.StopTimer()
+	var after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&after)
+	if after.HeapAlloc >= before.HeapAlloc {
+		b.ReportMetric(float64(after.HeapAlloc-before.HeapAlloc)/float64(b.N), "retained-B/op")
+	}
+	runtime.KeepAlive(matchers)
 }
 
 func BenchmarkMatcherNewWarm(b *testing.B) {
@@ -83,16 +101,26 @@ func BenchmarkMatchCorpusHash(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	inputs := make([][]byte, 0, len(matcher.engine.rules))
+	index, err := corpus.Load()
+	if err != nil {
+		b.Fatal(err)
+	}
+	vocabulary, err := tokenize.NewVocabularyFromWords(index.Vocabulary)
+	if err != nil {
+		b.Fatal(err)
+	}
+	inputs := make([][]byte, 0, len(index.Rules))
 	var byteCount int64
-	for _, rule := range matcher.engine.rules {
+	for _, rule := range index.Rules {
 		if len(rule.Tokens) == 0 {
 			continue
 		}
-		input := normalizedRuleText(matcher.engine, rule)
+		input := normalizedRuleText(vocabulary, rule)
 		inputs = append(inputs, input)
 		byteCount += int64(len(input))
 	}
+	index = corpus.Index{}
+	runtime.GC()
 	b.SetBytes(byteCount)
 	b.ResetTimer()
 	for b.Loop() {
@@ -359,21 +387,7 @@ func benchmarkRule(b *testing.B, id string) (*Matcher, []byte) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	for _, rule := range matcher.engine.rules {
-		if rule.ID == id {
-			return matcher, normalizedRuleText(matcher.engine, rule)
-		}
-	}
-	b.Fatalf("%s is absent", id)
-	return nil, nil
-}
-
-func normalizedRuleText(engine *matchEngine, rule corpus.Rule) []byte {
-	words := make([]string, len(rule.Tokens))
-	for index, token := range rule.Tokens {
-		words[index] = engine.vocabulary.Word(tokenize.ID(token))
-	}
-	return []byte(strings.Join(words, " "))
+	return matcher, embeddedRuleTexts(b, id)[id]
 }
 
 func newMatcher(index corpus.Index) (*Matcher, error) {
