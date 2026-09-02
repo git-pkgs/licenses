@@ -139,12 +139,21 @@ func (m *Matcher) Corpus() CorpusInfo {
 type matchEngine struct {
 	info                   CorpusInfo
 	vocabulary             *tokenize.Vocabulary
-	rules                  []corpus.Rule
+	rules                  []matchRule
+	ruleTokenLengths       []uint32
 	ruleExpressionMetadata []uint32
 	expressionMetadata     []expressionMetadata
 	automaton              aho.Automaton
 	hashes                 map[uint64][]uint32
 	spdx                   spdxIndex
+}
+
+// matchRule contains only the rule data needed after matcher construction.
+type matchRule struct {
+	ID         string
+	Expression string
+	Flags      uint16
+	Relevance  uint8
 }
 
 type expressionMetadata struct {
@@ -195,9 +204,18 @@ func newMatchEngine(index corpus.Index) (*matchEngine, error) {
 	hashes := make(map[uint64][]uint32, len(index.Rules))
 	spdxIndex := buildSPDXIndex(index)
 	metadataIndexes := make(map[string]uint32)
+	rules := make([]matchRule, len(index.Rules))
+	ruleTokenLengths := make([]uint32, len(index.Rules))
 	ruleMetadata := make([]uint32, len(index.Rules))
 	var metadata []expressionMetadata
 	for ruleIndex, rule := range index.Rules {
+		rules[ruleIndex] = matchRule{
+			ID:         rule.ID,
+			Expression: rule.Expression,
+			Flags:      rule.Flags,
+			Relevance:  rule.Relevance,
+		}
+		ruleTokenLengths[ruleIndex] = uint32(len(rule.Tokens))
 		metadataIndex, exists := metadataIndexes[rule.Expression]
 		if !exists {
 			scanCodeIDs := expressionIDs(rule.Expression)
@@ -224,7 +242,8 @@ func newMatchEngine(index corpus.Index) (*matchEngine, error) {
 			SourceCommit: index.Info.SourceCommit,
 		},
 		vocabulary:             vocabulary,
-		rules:                  index.Rules,
+		rules:                  rules,
+		ruleTokenLengths:       ruleTokenLengths,
 		ruleExpressionMetadata: ruleMetadata,
 		expressionMetadata:     metadata,
 		automaton:              index.Automaton,
@@ -319,7 +338,7 @@ func (e *matchEngine) collectExactMatches(
 		state = e.automaton.Next(state, uint32(token))
 		outputs = e.automaton.AppendOutputs(outputs[:0], state)
 		for _, ruleIndex := range outputs {
-			ruleLength := len(e.rules[ruleIndex].Tokens)
+			ruleLength := int(e.ruleTokenLengths[ruleIndex])
 			if ruleLength > position+1 {
 				continue
 			}
@@ -356,7 +375,7 @@ func (e *matchEngine) collectManyExactMatches(
 		state = e.automaton.Next(state, uint32(token))
 		outputs = e.automaton.AppendOutputs(outputs[:0], state)
 		for _, ruleIndex := range outputs {
-			if len(e.rules[ruleIndex].Tokens) > position+1 {
+			if int(e.ruleTokenLengths[ruleIndex]) > position+1 {
 				continue
 			}
 			if count == maxExactMatchCandidates {
@@ -378,7 +397,7 @@ func (e *matchEngine) collectManyExactMatches(
 		state = e.automaton.Next(state, uint32(token))
 		outputs = e.automaton.AppendOutputs(outputs[:0], state)
 		for _, ruleIndex := range outputs {
-			ruleLength := len(e.rules[ruleIndex].Tokens)
+			ruleLength := int(e.ruleTokenLengths[ruleIndex])
 			if ruleLength > position+1 {
 				continue
 			}
@@ -405,9 +424,14 @@ func (e *matchEngine) hashMatches(tokens []tokenize.ID) []exactMatch {
 	if len(candidates) == 0 {
 		return nil
 	}
+	state := uint32(0)
+	for _, token := range tokens {
+		state = e.automaton.Next(state, uint32(token))
+	}
 	matches := make([]exactMatch, 0, len(candidates))
 	for _, ruleIndex := range candidates {
-		if equalTokens(tokens, e.rules[ruleIndex].Tokens) {
+		if int(e.ruleTokenLengths[ruleIndex]) == len(tokens) &&
+			e.automaton.HasOutput(state, ruleIndex) {
 			matches = append(matches, exactMatch{
 				ruleIndex: ruleIndex,
 				tokenEnd:  len(tokens),
@@ -415,18 +439,6 @@ func (e *matchEngine) hashMatches(tokens []tokenize.ID) []exactMatch {
 		}
 	}
 	return matches
-}
-
-func equalTokens(input []tokenize.ID, rule []uint32) bool {
-	if len(input) != len(rule) {
-		return false
-	}
-	for index, token := range input {
-		if uint32(token) != rule[index] {
-			return false
-		}
-	}
-	return true
 }
 
 const (
@@ -466,7 +478,7 @@ func (e *matchEngine) metadataForRule(ruleIndex uint32) expressionMetadata {
 
 func (m *Matcher) makeMatch(
 	input []byte,
-	rule corpus.Rule,
+	rule matchRule,
 	licenseIDs []string,
 	method Method,
 	start int,

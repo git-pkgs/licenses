@@ -27,6 +27,11 @@ func TestAutomatonMatchesPatternsAndSuffixes(t *testing.T) {
 		state = automaton.Next(state, token)
 		outputs := automaton.AppendOutputs(nil, state)
 		slices.Sort(outputs)
+		for value := range uint32(4) {
+			if automaton.HasOutput(state, value) != slices.Contains(outputs, value) {
+				t.Fatalf("HasOutput(%d, %d) differs from outputs %v", state, value, outputs)
+			}
+		}
 		got = append(got, outputs)
 	}
 	want := [][]uint32{nil, {0, 1}, {2, 3}}

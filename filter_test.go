@@ -71,7 +71,7 @@ func TestFilterOverlappingMatchesRemovesExpectedMatch(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			engine := &matchEngine{rules: []corpus.Rule{
+			engine := &matchEngine{rules: []matchRule{
 				{Expression: "first"},
 				{Expression: "second"},
 			}}
@@ -145,8 +145,8 @@ func TestOverlappingMatchToRemove(t *testing.T) {
 		},
 	}
 	for _, test := range tests {
-		currentRule := corpus.Rule{Expression: "current"}
-		nextRule := corpus.Rule{Expression: "next"}
+		currentRule := matchRule{Expression: "current"}
+		nextRule := matchRule{Expression: "next"}
 		if test.sameLicensing {
 			nextRule.Expression = currentRule.Expression
 		}
@@ -168,7 +168,7 @@ func TestOverlappingMatchToRemove(t *testing.T) {
 func TestOverlapRemovalForPairUsesCombinedOverlap(t *testing.T) {
 	t.Parallel()
 
-	engine := &matchEngine{rules: []corpus.Rule{
+	engine := &matchEngine{rules: []matchRule{
 		{Expression: "previous"},
 		{Expression: "current"},
 		{Expression: "next"},
@@ -186,7 +186,7 @@ func TestOverlapRemovalForPairUsesCombinedOverlap(t *testing.T) {
 func TestOverlapRemovalForPairKeepsFalsePositivePair(t *testing.T) {
 	t.Parallel()
 
-	engine := &matchEngine{rules: []corpus.Rule{
+	engine := &matchEngine{rules: []matchRule{
 		{Flags: corpus.FlagFalsePositive},
 		{Flags: corpus.FlagFalsePositive},
 	}}

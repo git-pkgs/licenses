@@ -258,7 +258,7 @@ const (
 )
 
 func overlappingMatchToRemove(
-	currentRule, nextRule corpus.Rule,
+	currentRule, nextRule matchRule,
 	current, next exactMatch,
 	overlap int,
 ) overlapRemoval {

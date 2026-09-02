@@ -313,6 +313,18 @@ func (a *Automaton) AppendOutputs(values []uint32, state uint32) []uint32 {
 	return values
 }
 
+// HasOutput reports whether value is among the patterns ending at state.
+func (a *Automaton) HasOutput(state, value uint32) bool {
+	for node := state; node != None; node = a.OutputLinks[node] {
+		for output := a.TerminalHeads[node]; output != None; output = a.OutputNext[output] {
+			if output == value {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func direct(
 	edgeStarts []uint32,
 	edgeTokens []uint32,
