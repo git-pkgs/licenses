@@ -63,6 +63,7 @@ jobs:
           fi
 
           printf 'version=%s\ncommit=%s\n' "$version" "$commit" > CORPUS_VERSION
+          COMMIT="$commit" ruby -pi -e 'sub(/^Pinned source commit: .+$/, "Pinned source commit: " + ENV.fetch("COMMIT"))' NOTICE
           printf 'changed=true\n' >> "$GITHUB_OUTPUT"
 
       - name: Set up Go
@@ -70,6 +71,30 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
+
+      - name: Snapshot checked-in corpus
+        if: steps.upstream.outputs.changed == 'true'
+        run: |
+          cp internal/corpus/corpus.bin.gz "$RUNNER_TEMP/previous-corpus.bin.gz"
+          cp testdata/scancode_conformance_exact.json "$RUNNER_TEMP/previous-conformance.json"
+
+      - name: Benchmark checked-in corpus
+        if: steps.upstream.outputs.changed == 'true'
+        run: |
+          GOMAXPROCS=1 go test . \
+            -run '^$' \
+            -bench '^BenchmarkMatcherColdStart$' \
+            -benchmem \
+            -benchtime 1x \
+            -count 5 \
+            > "$RUNNER_TEMP/previous-benchmarks.txt"
+          GOMAXPROCS=1 go test . \
+            -run '^$' \
+            -bench '^(BenchmarkMatcherNewWarm|BenchmarkMatchCorpusHash)$' \
+            -benchmem \
+            -benchtime 1s \
+            -count 5 \
+            >> "$RUNNER_TEMP/previous-benchmarks.txt"
 
       - name: Regenerate corpus
         if: steps.upstream.outputs.changed == 'true'
@@ -97,6 +122,45 @@ jobs:
           SCANCODE_TESTDATA: .scancode/tests/licensedcode/data
         run: go test . -run '^TestScanCodeConformanceExact$' -v
 
+      - name: Check deterministic rebuild
+        if: steps.upstream.outputs.changed == 'true'
+        run: >
+          go run ./cmd/corpusgen
+          -scancode .scancode
+          -version-file CORPUS_VERSION
+          -output "$RUNNER_TEMP/rebuilt-corpus.bin.gz"
+
+      - name: Benchmark regenerated corpus
+        if: steps.upstream.outputs.changed == 'true'
+        run: |
+          GOMAXPROCS=1 go test . \
+            -run '^$' \
+            -bench '^BenchmarkMatcherColdStart$' \
+            -benchmem \
+            -benchtime 1x \
+            -count 5 \
+            > "$RUNNER_TEMP/benchmarks.txt"
+          GOMAXPROCS=1 go test . \
+            -run '^$' \
+            -bench '^(BenchmarkMatcherNewWarm|BenchmarkMatchCorpusHash)$' \
+            -benchmem \
+            -benchtime 1s \
+            -count 5 \
+            >> "$RUNNER_TEMP/benchmarks.txt"
+
+      - name: Generate regeneration report
+        if: steps.upstream.outputs.changed == 'true'
+        run: |
+          go run ./cmd/corpusreport \
+            -previous-corpus "$RUNNER_TEMP/previous-corpus.bin.gz" \
+            -corpus internal/corpus/corpus.bin.gz \
+            -rebuilt-corpus "$RUNNER_TEMP/rebuilt-corpus.bin.gz" \
+            -previous-conformance "$RUNNER_TEMP/previous-conformance.json" \
+            -conformance testdata/scancode_conformance_exact.json \
+            -previous-benchmarks "$RUNNER_TEMP/previous-benchmarks.txt" \
+            -benchmarks "$RUNNER_TEMP/benchmarks.txt" \
+            -output "$RUNNER_TEMP/corpus-report.md"
+
       - name: Check diff
         if: steps.upstream.outputs.changed == 'true'
         run: git diff --check
@@ -106,7 +170,7 @@ jobs:
         env:
           BRANCH: automation/refresh-corpus
           GH_TOKEN: ${{ github.token }}
-          PULL_REQUEST_BODY: Update the embedded license corpus and conformance baseline from the latest `aboutcode-org/scancode-toolkit` `develop` branch.
+          REPORT_PATH: ${{ runner.temp }}/corpus-report.md
         shell: bash
         run: |
           set -euo pipefail
@@ -114,7 +178,7 @@ jobs:
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git switch -c "$BRANCH"
-          git add CORPUS_VERSION CORPUS_SHA256 internal/corpus/corpus.bin.gz testdata/scancode_conformance_exact.json
+          git add CORPUS_VERSION CORPUS_SHA256 NOTICE internal/corpus/corpus.bin.gz testdata/scancode_conformance_exact.json
           if git diff --cached --quiet; then
             printf 'No corpus changes to commit\n'
             exit 0
@@ -144,5 +208,9 @@ jobs:
               --base main \
               --head "$BRANCH" \
               --title "Refresh ScanCode corpus" \
-              --body "$PULL_REQUEST_BODY"
+              --body-file "$REPORT_PATH"
+          else
+            gh pr edit "$pull_request" \
+              --repo "$GITHUB_REPOSITORY" \
+              --body-file "$REPORT_PATH"
           fi
