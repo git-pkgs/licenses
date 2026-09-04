@@ -255,6 +255,35 @@ func newMatchEngine(index corpus.Index) (*matchEngine, error) {
 // Match finds exact normalized rule matches in b. It returns
 // ErrTooManyMatches when the input exceeds the exact-match candidate limit;
 // callers can identify it with errors.Is.
+// matchScratch holds per-call buffers reused across Match invocations.
+type matchScratch struct {
+	ids     []tokenize.ID
+	offsets []tokenize.Offset
+	word    []byte
+}
+
+// Pooled buffers are capped so a single large input does not retain memory
+// for every subsequent call. The cap is on capacity, not length.
+const matchScratchTokenCap = 1 << 16
+
+var matchScratchPool = sync.Pool{
+	New: func() any { return &matchScratch{} },
+}
+
+func getMatchScratch() *matchScratch {
+	return matchScratchPool.Get().(*matchScratch)
+}
+
+func putMatchScratch(s *matchScratch) {
+	if cap(s.ids) > matchScratchTokenCap {
+		s.ids = nil
+	}
+	if cap(s.offsets) > matchScratchTokenCap {
+		s.offsets = nil
+	}
+	matchScratchPool.Put(s)
+}
+
 func (m *Matcher) Match(ctx context.Context, b []byte) (Result, error) {
 	return m.match(ctx, b, allExactFilters)
 }
@@ -270,7 +299,11 @@ func (m *Matcher) match(ctx context.Context, b []byte, filters exactFilterOption
 		return Result{}, err
 	}
 
-	tokens := m.engine.vocabulary.TokenizeIDs(b)
+	scratch := getMatchScratch()
+	defer putMatchScratch(scratch)
+
+	tokens := m.engine.vocabulary.TokenizeIDsAppend(b, scratch.ids, &scratch.word)
+	scratch.ids = tokens.IDs
 	result := Result{Corpus: m.engine.info}
 	if len(tokens.IDs) == 0 {
 		m.matchSPDXTags(b, &result)
@@ -287,7 +320,8 @@ func (m *Matcher) match(ctx context.Context, b []byte, filters exactFilterOption
 	}
 	var offsets []tokenize.Offset
 	if len(candidates) != 0 && method == Exact {
-		offsets = tokenize.TokenOffsets(b, len(tokens.IDs))
+		offsets = tokenize.TokenOffsetsAppend(b, scratch.offsets)
+		scratch.offsets = offsets
 		if err := ctx.Err(); err != nil {
 			return Result{}, err
 		}

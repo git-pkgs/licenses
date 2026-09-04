@@ -686,3 +686,26 @@ func testMatcher(t *testing.T, matchedText bool) *Matcher {
 	}
 	return &Matcher{engine: engine, matchedText: matchedText}
 }
+
+func TestMatchScratchPoolCapsRetainedBuffers(t *testing.T) {
+	t.Parallel()
+
+	small := &matchScratch{
+		ids:     make([]tokenize.ID, 10),
+		offsets: make([]tokenize.Offset, 10),
+	}
+	putMatchScratch(small)
+	if cap(small.ids) != 10 || cap(small.offsets) != 10 {
+		t.Fatalf("small buffers dropped: ids cap=%d offsets cap=%d", cap(small.ids), cap(small.offsets))
+	}
+
+	large := &matchScratch{
+		ids:     make([]tokenize.ID, 0, matchScratchTokenCap+1),
+		offsets: make([]tokenize.Offset, 0, matchScratchTokenCap+1),
+	}
+	putMatchScratch(large)
+	if large.ids != nil || large.offsets != nil {
+		t.Fatalf("oversize buffers retained: ids cap=%d offsets cap=%d",
+			cap(large.ids), cap(large.offsets))
+	}
+}
