@@ -275,13 +275,17 @@ func getMatchScratch() *matchScratch {
 }
 
 func putMatchScratch(s *matchScratch) {
+	s.dropOversized()
+	matchScratchPool.Put(s)
+}
+
+func (s *matchScratch) dropOversized() {
 	if cap(s.ids) > matchScratchTokenCap {
 		s.ids = nil
 	}
 	if cap(s.offsets) > matchScratchTokenCap {
 		s.offsets = nil
 	}
-	matchScratchPool.Put(s)
 }
 
 func (m *Matcher) Match(ctx context.Context, b []byte) (Result, error) {

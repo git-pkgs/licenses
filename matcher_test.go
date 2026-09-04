@@ -687,14 +687,14 @@ func testMatcher(t *testing.T, matchedText bool) *Matcher {
 	return &Matcher{engine: engine, matchedText: matchedText}
 }
 
-func TestMatchScratchPoolCapsRetainedBuffers(t *testing.T) {
+func TestMatchScratchDropsOversizedBuffers(t *testing.T) {
 	t.Parallel()
 
 	small := &matchScratch{
 		ids:     make([]tokenize.ID, 10),
 		offsets: make([]tokenize.Offset, 10),
 	}
-	putMatchScratch(small)
+	small.dropOversized()
 	if cap(small.ids) != 10 || cap(small.offsets) != 10 {
 		t.Fatalf("small buffers dropped: ids cap=%d offsets cap=%d", cap(small.ids), cap(small.offsets))
 	}
@@ -703,9 +703,18 @@ func TestMatchScratchPoolCapsRetainedBuffers(t *testing.T) {
 		ids:     make([]tokenize.ID, 0, matchScratchTokenCap+1),
 		offsets: make([]tokenize.Offset, 0, matchScratchTokenCap+1),
 	}
-	putMatchScratch(large)
+	large.dropOversized()
 	if large.ids != nil || large.offsets != nil {
 		t.Fatalf("oversize buffers retained: ids cap=%d offsets cap=%d",
 			cap(large.ids), cap(large.offsets))
+	}
+
+	at := &matchScratch{
+		ids:     make([]tokenize.ID, 0, matchScratchTokenCap),
+		offsets: make([]tokenize.Offset, 0, matchScratchTokenCap),
+	}
+	at.dropOversized()
+	if cap(at.ids) != matchScratchTokenCap || cap(at.offsets) != matchScratchTokenCap {
+		t.Fatalf("at-cap buffers dropped: ids cap=%d offsets cap=%d", cap(at.ids), cap(at.offsets))
 	}
 }
