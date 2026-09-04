@@ -80,3 +80,16 @@ run. Allocation figures from `-benchmem` cover the Go benchmark driver, not
 memory allocated by either child process.
 
 Use the standard `go test` flags to change benchmark duration and sample count.
+
+## Corpus regeneration report
+
+The monthly corpus refresh workflow benchmarks the checked-in and regenerated
+corpora back to back on the same runner. It records the median cold startup,
+repeated `New`, and warm corpus-matching results, then combines them with corpus
+identity, size, deterministic rebuild, and conformance changes in the refresh
+pull request description.
+
+`cmd/corpusreport` renders the Markdown report from the two corpus files,
+conformance baselines, deterministic rebuild, and Go benchmark outputs. The
+workflow is the reference invocation because it captures the checked-in inputs
+before regeneration.

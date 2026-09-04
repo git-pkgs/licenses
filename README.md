@@ -155,9 +155,9 @@ go run ./cmd/corpusgen \
 
 ## Conformance
 
-The exact matcher passes 1,535 of 1,786 cases (85.95%) from ScanCode's four
-active data-driven detection suites. Run the suite against a ScanCode checkout
-at the commit in `CORPUS_VERSION`:
+The exact matcher is evaluated against ScanCode's four active data-driven
+detection suites. Run the suite against a ScanCode checkout at the commit in
+`CORPUS_VERSION`:
 
 ```bash
 SCANCODE_TESTDATA=/path/to/scancode-toolkit/tests/licensedcode/data \

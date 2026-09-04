@@ -27,9 +27,6 @@ func TestEmbeddedCorpus(t *testing.T) {
 	if index.Info.SourceCommit != wantCommit {
 		t.Fatalf("source commit = %q, want %q", index.Info.SourceCommit, wantCommit)
 	}
-	if index.Info.RuleCount != 39_215 {
-		t.Fatalf("rule count = %d, want 39215", index.Info.RuleCount)
-	}
 	if len(index.Rules) != index.Info.RuleCount {
 		t.Fatalf("decoded %d rules, metadata reports %d", len(index.Rules), index.Info.RuleCount)
 	}
@@ -134,8 +131,8 @@ func BenchmarkEmbeddedCorpusLoad(b *testing.B) {
 		if err != nil {
 			b.Fatal(err)
 		}
-		if len(index.Rules) != 39_215 {
-			b.Fatalf("decoded %d rules", len(index.Rules))
+		if len(index.Rules) != index.Info.RuleCount {
+			b.Fatalf("decoded %d rules, metadata reports %d", len(index.Rules), index.Info.RuleCount)
 		}
 	}
 }
