@@ -592,6 +592,7 @@ func readAutomaton(r *bufio.Reader, valueCount int) (aho.Automaton, error) {
 		TerminalHeads: terminalHeads,
 		OutputNext:    outputNext,
 	}
+	automaton.BuildRootTable()
 	if err := automaton.Validate(valueCount); err != nil {
 		return aho.Automaton{}, fmt.Errorf("corpus: invalid automaton: %w", err)
 	}

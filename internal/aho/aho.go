@@ -24,6 +24,12 @@ type Automaton struct {
 	OutputLinks   []uint32
 	TerminalHeads []uint32
 	OutputNext    []uint32
+
+	// rootNext maps token to state 0's child for that token, or 0 for no
+	// edge. It is derived from EdgeStarts and EdgeTokens by BuildRootTable
+	// and covers tokens up to the highest root edge; tokens above that
+	// index also have no root edge.
+	rootNext []uint32
 }
 
 // Build constructs an automaton. Empty patterns are ignored.
@@ -102,7 +108,7 @@ func Build(patterns []Pattern, valueCount int) (Automaton, error) {
 		return Automaton{}, err
 	}
 	failures, outputLinks := buildFailures(edgeStarts, edgeTokens, edgeTargets, terminalHeads)
-	return reorderBreadthFirst(
+	automaton := reorderBreadthFirst(
 		edgeStarts,
 		edgeTokens,
 		edgeTargets,
@@ -110,7 +116,9 @@ func Build(patterns []Pattern, valueCount int) (Automaton, error) {
 		outputLinks,
 		terminalHeads,
 		outputNext,
-	), nil
+	)
+	automaton.BuildRootTable()
+	return automaton, nil
 }
 
 func commonPrefix(first, second []uint32) int {
@@ -290,17 +298,42 @@ func reorderBreadthFirst(
 	}
 }
 
+// BuildRootTable derives the root transition table from EdgeStarts and
+// EdgeTokens. Root receives the majority of transition probes and has the
+// widest fanout, so a direct token-indexed lookup replaces its binary
+// search. Call after EdgeStarts and EdgeTokens are populated.
+func (a *Automaton) BuildRootTable() {
+	if len(a.EdgeStarts) < 2 {
+		return
+	}
+	end := a.EdgeStarts[1]
+	if end == 0 {
+		a.rootNext = nil
+		return
+	}
+	table := make([]uint32, a.EdgeTokens[end-1]+1)
+	for edge := a.EdgeStarts[0]; edge < end; edge++ {
+		table[a.EdgeTokens[edge]] = edge + 1
+	}
+	a.rootNext = table
+}
+
 // Next advances state with token, following failure links as needed.
 func (a *Automaton) Next(state, token uint32) uint32 {
-	for {
+	for state != 0 {
 		if target, found := directImplicit(a.EdgeStarts, a.EdgeTokens, state, token); found {
 			return target
 		}
-		if state == 0 {
-			return 0
-		}
 		state = a.Failures[state]
 	}
+	if a.rootNext != nil {
+		if uint64(token) < uint64(len(a.rootNext)) {
+			return a.rootNext[token]
+		}
+		return 0
+	}
+	target, _ := directImplicit(a.EdgeStarts, a.EdgeTokens, 0, token)
+	return target
 }
 
 // AppendOutputs appends all pattern values ending at state to values.
