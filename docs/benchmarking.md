@@ -103,6 +103,10 @@ go build -o /tmp/licenses-bench ./cmd/licenses
   --json-pp /tmp/scancode.json /path/to/repo
 ```
 
+`licenses` exits 2 when the scan completes with per-file errors, such
+as manifests its parser does not model or a repository's own
+deliberately-invalid test fixtures. Timing and peak RSS are unaffected.
+
 `scancode -l` restricts scancode-toolkit to license detection. Its default
 process count is one less than the CPU count from 32.4.0 onward; pass `-n 1`
 for a single-worker run.
