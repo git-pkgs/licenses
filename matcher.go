@@ -369,7 +369,7 @@ func (m *Matcher) match(ctx context.Context, b []byte, filters exactFilterOption
 	return result, nil
 }
 
-const maxExactMatchCandidates = 100_000
+const maxExactMatchCandidates = 1_000_000
 
 // Large candidate sets use two full automaton passes so the retained slice is
 // allocated once at its exact, bounded size.
