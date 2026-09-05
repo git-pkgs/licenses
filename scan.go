@@ -823,8 +823,9 @@ func readScannableFile(path string, maximum int64) ([]byte, magic.Result, bool, 
 	if err != nil && !errors.Is(err, io.EOF) {
 		return nil, magic.Result{}, false, err
 	}
-	if detection := magic.DetectPrefix(data.Bytes()); detection.Kind == magic.KindBinary {
-		return nil, detection, false, nil
+	prefixDetection := magic.DetectPrefix(data.Bytes())
+	if prefixDetection.Kind == magic.KindBinary {
+		return nil, prefixDetection, false, nil
 	}
 	if maximum > 0 && int64(data.Len()) > maximum {
 		return nil, magic.Result{}, true, nil
@@ -841,7 +842,11 @@ func readScannableFile(path string, maximum int64) ([]byte, magic.Result, bool, 
 		return nil, magic.Result{}, true, nil
 	}
 	content := data.Bytes()
-	return content, magic.Detect(content), false, nil
+	detection := magic.Detect(content)
+	if detection.Kind == magic.KindBinary && prefixDetection.Kind == magic.KindText {
+		detection = prefixDetection
+	}
+	return content, detection, false, nil
 }
 
 func growReadBuffer(file *os.File, data *bytes.Buffer, maximum int64) {

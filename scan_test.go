@@ -105,6 +105,45 @@ func TestScanRepository(t *testing.T) {
 	}
 }
 
+func TestScanRepositoryScansTextWithLaterControlBytes(t *testing.T) {
+	t.Parallel()
+
+	prefix := []byte(strings.Repeat("This notice lists bundled software.\n", 300))
+	if len(prefix) < classificationProbeSize {
+		t.Fatalf("test data prefix = %d bytes, want at least %d", len(prefix), classificationProbeSize)
+	}
+	data := append(prefix, byte(0))
+	data = append(data, projectLicense(t)...)
+	if detection := magic.DetectPrefix(data[:classificationProbeSize]); detection.Kind != magic.KindText {
+		t.Fatalf("test data prefix kind = %q, want text", detection.Kind)
+	}
+	if detection := magic.Detect(data); detection.Kind != magic.KindBinary {
+		t.Fatalf("test data kind = %q, want binary", detection.Kind)
+	}
+
+	path := filepath.Join(t.TempDir(), "THIRD_PARTY_NOTICES")
+	writeTestFile(t, path, data)
+	options := DefaultScanOptions()
+	options.MaxFileSize = int64(len(data))
+	options.Workers = 1
+	report, err := ScanRepository(
+		context.Background(),
+		newTestMatcher(t),
+		path,
+		options,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if report.Summary.FilesScanned != 1 || report.Summary.FilesSkippedBinary != 0 {
+		t.Fatalf("summary = %#v, want one scanned file and no binary skip", report.Summary)
+	}
+	if len(report.Files) != 1 || !hasMITExpression(report.Files[0]) {
+		t.Fatalf("files = %#v, want one MIT detection", report.Files)
+	}
+}
+
 func TestScanRepositoryScannerMetadataAllowsEmptyVersion(t *testing.T) {
 	t.Parallel()
 
@@ -259,19 +298,23 @@ func TestDeclaredLicenseReadErrorAndLockfileGate(t *testing.T) {
 	}
 }
 
-func TestScanRepositorySkipsDetectedBinary(t *testing.T) {
+func TestScanRepositorySkipsBinaryPrefixes(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
-	files := map[string][]byte{
+	binaryFiles := map[string][]byte{
 		"control":   []byte("plain\x01text"),
 		"early-nul": []byte("plain\x00text"),
-		"late-nul":  append([]byte(strings.Repeat("x", classificationProbeSize)), 0),
 		"pdf":       []byte("%PDF-1.7\n%%EOF\n"),
 	}
-	for name, data := range files {
+	for name, data := range binaryFiles {
 		writeTestFile(t, filepath.Join(root, name), data)
 	}
+	writeTestFile(
+		t,
+		filepath.Join(root, "late-nul"),
+		append([]byte(strings.Repeat("x", classificationProbeSize)), 0),
+	)
 
 	report, err := scanRepository(
 		context.Background(),
@@ -283,17 +326,17 @@ func TestScanRepositorySkipsDetectedBinary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if report.Summary.FilesSkippedBinary != len(files) {
+	if report.Summary.FilesSkippedBinary != len(binaryFiles) {
 		t.Errorf(
 			"binary files skipped = %d, want %d",
 			report.Summary.FilesSkippedBinary,
-			len(files),
+			len(binaryFiles),
 		)
 	}
-	if report.Summary.FilesScanned != 0 {
-		t.Errorf("files scanned = %d, want 0", report.Summary.FilesScanned)
+	if report.Summary.FilesScanned != 1 {
+		t.Errorf("files scanned = %d, want 1", report.Summary.FilesScanned)
 	}
-	for name := range files {
+	for name := range binaryFiles {
 		if !hasSkip(report.Skipped, skipRecord{Path: name, Reason: skipReasonBinary}) {
 			t.Errorf("skipped = %#v, want %s as binary", report.Skipped, name)
 		}
@@ -1189,9 +1232,9 @@ func TestScanRepositoryRecordsCandidateLimit(t *testing.T) {
 	t.Parallel()
 
 	path := filepath.Join(t.TempDir(), "repeated.txt")
-	writeTestFile(t, path, []byte(strings.Repeat("mit license ", 100_000)))
+	writeTestFile(t, path, []byte(strings.Repeat("mit license ", 400_000)))
 	options := defaultTestScanOptions()
-	options.MaxFileSize = 2 << 20
+	options.MaxFileSize = 8 << 20
 
 	report, err := scanRepository(
 		context.Background(),

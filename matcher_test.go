@@ -409,12 +409,16 @@ func TestCollectExactMatchesEnforcesCandidateLimit(t *testing.T) {
 	}
 }
 
-func TestEmbeddedMatcherCapsRepeatedCandidates(t *testing.T) {
+func TestEmbeddedMatcherCandidateLimit(t *testing.T) {
 	matcher, err := New()
 	if err != nil {
 		t.Fatal(err)
 	}
-	input := []byte(strings.Repeat("mit license ", 100_000))
+	large := []byte(strings.Repeat("mit license ", 100_000))
+	if _, err := matcher.Match(context.Background(), large); err != nil {
+		t.Fatalf("Match rejected a supported large candidate set: %v", err)
+	}
+	input := []byte(strings.Repeat("mit license ", 400_000))
 
 	_, err = matcher.Match(context.Background(), input)
 	if err == nil {
