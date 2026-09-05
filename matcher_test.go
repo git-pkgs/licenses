@@ -687,40 +687,30 @@ func testMatcher(t *testing.T, matchedText bool) *Matcher {
 	return &Matcher{engine: engine, matchedText: matchedText}
 }
 
-func TestMatchScratchDropsOversizedBuffers(t *testing.T) {
+func TestMatchScratchRetainsBoundedBuffers(t *testing.T) {
 	t.Parallel()
-
-	small := &matchScratch{
-		ids:     make([]tokenize.ID, 10),
-		offsets: make([]tokenize.Offset, 10),
-		word:    make([]byte, 10),
-	}
-	small.dropOversized()
+	small := matchScratch{ids: make([]tokenize.ID, 10), offsets: make([]tokenize.Offset, 10), word: make([]byte, 10)}
+	small.retain(matchScratch{})
 	if cap(small.ids) != 10 || cap(small.offsets) != 10 || cap(small.word) != 10 {
-		t.Fatalf("small buffers dropped: ids cap=%d offsets cap=%d word cap=%d",
-			cap(small.ids), cap(small.offsets), cap(small.word))
+		t.Fatal("small buffers discarded")
 	}
-
-	large := &matchScratch{
+	large := matchScratch{
 		ids:     make([]tokenize.ID, 0, matchScratchTokenCap+1),
 		offsets: make([]tokenize.Offset, 0, matchScratchTokenCap+1),
 		word:    make([]byte, 0, matchScratchWordCap+1),
 	}
-	large.dropOversized()
-	if large.ids != nil || large.offsets != nil || large.word != nil {
-		t.Fatalf("oversize buffers retained: ids cap=%d offsets cap=%d word cap=%d",
-			cap(large.ids), cap(large.offsets), cap(large.word))
+	original := large
+	large.retain(matchScratch{})
+	if cap(large.ids) != matchScratchTokenCap || cap(large.offsets) != matchScratchTokenCap || cap(large.word) != matchScratchWordCap {
+		t.Fatal("reserve exceeds its budget")
 	}
-
-	at := &matchScratch{
-		ids:     make([]tokenize.ID, 0, matchScratchTokenCap),
-		offsets: make([]tokenize.Offset, 0, matchScratchTokenCap),
-		word:    make([]byte, 0, matchScratchWordCap),
+	if &large.ids[:1][0] == &original.ids[:1][0] || &large.offsets[:1][0] == &original.offsets[:1][0] || &large.word[:1][0] == &original.word[:1][0] {
+		t.Fatal("reserve retains oversized backing array")
 	}
-	at.dropOversized()
-	if cap(at.ids) != matchScratchTokenCap || cap(at.offsets) != matchScratchTokenCap ||
-		cap(at.word) != matchScratchWordCap {
-		t.Fatalf("at-cap buffers dropped: ids cap=%d offsets cap=%d word cap=%d",
-			cap(at.ids), cap(at.offsets), cap(at.word))
+	previous := large
+	large = original
+	large.retain(previous)
+	if &large.ids[:1][0] != &previous.ids[:1][0] || &large.offsets[:1][0] != &previous.offsets[:1][0] || &large.word[:1][0] != &previous.word[:1][0] {
+		t.Fatal("bounded reserve was reallocated")
 	}
 }

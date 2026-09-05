@@ -265,8 +265,7 @@ type matchScratch struct {
 	word    []byte
 }
 
-// Pooled buffers are capped so a single large input does not retain memory
-// for every subsequent call. The cap is on capacity, not length.
+// Oversized calls keep their buffers separate from the bounded pooled reserve.
 const (
 	matchScratchTokenCap = 1 << 16
 	matchScratchWordCap  = 1 << 12
@@ -280,21 +279,25 @@ func getMatchScratch() *matchScratch {
 	return matchScratchPool.Get().(*matchScratch)
 }
 
-func putMatchScratch(s *matchScratch) {
-	s.dropOversized()
+func putMatchScratch(s *matchScratch, previous matchScratch) {
+	s.retain(previous)
 	matchScratchPool.Put(s)
 }
 
-func (s *matchScratch) dropOversized() {
-	if cap(s.ids) > matchScratchTokenCap {
-		s.ids = nil
+func (s *matchScratch) retain(previous matchScratch) {
+	s.ids = retainBuffer(s.ids, previous.ids, matchScratchTokenCap)
+	s.offsets = retainBuffer(s.offsets, previous.offsets, matchScratchTokenCap)
+	s.word = retainBuffer(s.word, previous.word, matchScratchWordCap)
+}
+
+func retainBuffer[T any](current, previous []T, limit int) []T {
+	if cap(current) <= limit {
+		return current[:0]
 	}
-	if cap(s.offsets) > matchScratchTokenCap {
-		s.offsets = nil
+	if cap(previous) != limit {
+		previous = make([]T, 0, limit)
 	}
-	if cap(s.word) > matchScratchWordCap {
-		s.word = nil
-	}
+	return previous[:0]
 }
 
 // Match finds exact normalized rule matches in b. It returns
@@ -316,7 +319,7 @@ func (m *Matcher) match(ctx context.Context, b []byte, filters exactFilterOption
 	}
 
 	scratch := getMatchScratch()
-	defer putMatchScratch(scratch)
+	defer putMatchScratch(scratch, *scratch)
 
 	tokens := m.engine.vocabulary.TokenizeIDsAppend(b, scratch.ids, &scratch.word)
 	scratch.ids = tokens.IDs
@@ -336,6 +339,9 @@ func (m *Matcher) match(ctx context.Context, b []byte, filters exactFilterOption
 	}
 	var offsets []tokenize.Offset
 	if len(candidates) != 0 && method == Exact {
+		if cap(scratch.offsets) < len(tokens.IDs) {
+			scratch.offsets = make([]tokenize.Offset, 0, len(tokens.IDs))
+		}
 		offsets = tokenize.TokenOffsetsAppend(b, scratch.offsets)
 		scratch.offsets = offsets
 		if err := ctx.Err(); err != nil {
