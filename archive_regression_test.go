@@ -103,7 +103,7 @@ type archiveSampleMiss struct {
 	Archive    string  `json:"archive"`
 	Path       string  `json:"path"`
 	SHA256     string  `json:"sha256"`
-	License    string  `json:"licensee"`
+	Licensee   string  `json:"licensee"`
 	Confidence float64 `json:"confidence"`
 }
 
@@ -174,15 +174,20 @@ func testArchiveRegressionCase(t *testing.T, matcher *Matcher, options ScanOptio
 			matchedTextHashes = append(matchedTextHashes, sha256Hex([]byte(match.Matched)))
 		}
 	}
-	sort.Slice(gotDetections, func(i, j int) bool {
-		if gotDetections[i].Expression == gotDetections[j].Expression {
-			return gotDetections[i].Identification < gotDetections[j].Identification
-		}
-		return gotDetections[i].Expression < gotDetections[j].Expression
-	})
+	sortDetections := func(detections []archiveRegressionDetection) {
+		sort.Slice(detections, func(i, j int) bool {
+			if detections[i].Expression == detections[j].Expression {
+				return detections[i].Identification < detections[j].Identification
+			}
+			return detections[i].Expression < detections[j].Expression
+		})
+	}
+	sortDetections(gotDetections)
+	wantDetections := slices.Clone(testCase.Expected.Detections)
+	sortDetections(wantDetections)
 	slices.Sort(matchedTextHashes)
 	matchedTextHashes = slices.Compact(matchedTextHashes)
-	if !slices.Equal(gotDetections, testCase.Expected.Detections) ||
+	if !slices.Equal(gotDetections, wantDetections) ||
 		len(file.Clues) != testCase.Expected.ClueCount ||
 		!slices.Equal(matchedTextHashes, testCase.Expected.MatchedTextSHA256) {
 		t.Fatalf("result changed:\n detections = %+v\n clues = %d\n matched text = %v",
@@ -307,7 +312,7 @@ func testArchiveSampleDetails(t *testing.T, sample archiveRegressionSample) {
 		releases[release.ID] = struct{}{}
 	}
 	for _, miss := range sample.Misses {
-		if miss.Archive == "" || miss.Path == "" || miss.License == "" ||
+		if miss.Archive == "" || miss.Path == "" || miss.Licensee == "" ||
 			!validHex(miss.SHA256, sha256.Size) || miss.Confidence < 98 {
 			t.Errorf("incomplete useful exact miss: %+v", miss)
 		}
