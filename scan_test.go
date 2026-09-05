@@ -108,10 +108,11 @@ func TestScanRepository(t *testing.T) {
 func TestScanRepositoryScansTextWithLaterControlBytes(t *testing.T) {
 	t.Parallel()
 
-	data := append(
-		[]byte(strings.Repeat("This notice lists bundled software.\n", 300)),
-		byte(0),
-	)
+	prefix := []byte(strings.Repeat("This notice lists bundled software.\n", 300))
+	if len(prefix) < classificationProbeSize {
+		t.Fatalf("test data prefix = %d bytes, want at least %d", len(prefix), classificationProbeSize)
+	}
+	data := append(prefix, byte(0))
 	data = append(data, projectLicense(t)...)
 	if detection := magic.DetectPrefix(data[:classificationProbeSize]); detection.Kind != magic.KindText {
 		t.Fatalf("test data prefix kind = %q, want text", detection.Kind)
