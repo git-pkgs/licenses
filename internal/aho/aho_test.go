@@ -90,6 +90,78 @@ func TestBuildFailureLinksReconstructsAutomaton(t *testing.T) {
 	}
 }
 
+func TestNextRootTableAgreesWithBinarySearch(t *testing.T) {
+	t.Parallel()
+
+	automaton, err := Build([]Pattern{
+		{Tokens: []uint32{2, 5}, Value: 0},
+		{Tokens: []uint32{7}, Value: 1},
+		{Tokens: []uint32{5, 2}, Value: 2},
+		{Tokens: []uint32{2, 5, 7}, Value: 3},
+	}, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if automaton.rootNext == nil {
+		t.Fatal("Build did not populate rootNext")
+	}
+
+	without := automaton
+	without.rootNext = nil
+
+	for _, input := range [][]uint32{
+		{2, 5, 7},
+		{1, 2, 3, 4, 5, 6, 7, 8, 9},
+		{9, 9, 2, 9, 5, 2, 9, 7},
+		{100},
+	} {
+		var withState, withoutState uint32
+		for position, token := range input {
+			withState = automaton.Next(withState, token)
+			withoutState = without.Next(withoutState, token)
+			if withState != withoutState {
+				t.Fatalf("input %v: state at %d differs: table=%d bsearch=%d",
+					input, position, withState, withoutState)
+			}
+		}
+	}
+}
+
+func TestBuildRootTableIndexesRootEdges(t *testing.T) {
+	t.Parallel()
+
+	automaton, err := Build([]Pattern{
+		{Tokens: []uint32{3}, Value: 0},
+		{Tokens: []uint32{10}, Value: 1},
+	}, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(automaton.rootNext) != 11 {
+		t.Fatalf("rootNext length = %d, want 11", len(automaton.rootNext))
+	}
+	if automaton.rootNext[3] == 0 || automaton.rootNext[10] == 0 {
+		t.Fatalf("rootNext missing edges: %#v", automaton.rootNext)
+	}
+	if automaton.rootNext[0] != 0 || automaton.rootNext[5] != 0 {
+		t.Fatalf("rootNext has spurious edges: %#v", automaton.rootNext)
+	}
+	if got := automaton.Next(0, 20); got != 0 {
+		t.Fatalf("Next(0, 20) = %d, want 0", got)
+	}
+
+	empty, err := Build(nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if empty.rootNext != nil {
+		t.Fatalf("empty automaton rootNext = %#v, want nil", empty.rootNext)
+	}
+	if got := empty.Next(0, 5); got != 0 {
+		t.Fatalf("empty Next(0, 5) = %d, want 0", got)
+	}
+}
+
 func TestBuildRejectsZeroToken(t *testing.T) {
 	t.Parallel()
 
@@ -117,5 +189,6 @@ func equalAutomata(first, second Automaton) bool {
 		slices.Equal(first.Failures, second.Failures) &&
 		slices.Equal(first.OutputLinks, second.OutputLinks) &&
 		slices.Equal(first.TerminalHeads, second.TerminalHeads) &&
-		slices.Equal(first.OutputNext, second.OutputNext)
+		slices.Equal(first.OutputNext, second.OutputNext) &&
+		slices.Equal(first.rootNext, second.rootNext)
 }
