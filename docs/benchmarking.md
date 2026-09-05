@@ -1,7 +1,8 @@
 # Benchmarking
 
 The benchmarks use Go's `testing` package. Record the Go version, operating
-system, corpus commit, and Licensee version with published results.
+system, corpus commit, and Licensee or scancode-toolkit version with
+published results.
 
 ## Matcher
 
@@ -80,6 +81,42 @@ run. Allocation figures from `-benchmem` cover the Go benchmark driver, not
 memory allocated by either child process.
 
 Use the standard `go test` flags to change benchmark duration and sample count.
+
+## ScanCode comparison
+
+Install the current scancode-toolkit in an isolated environment and let it
+build its license index once before timing:
+
+```bash
+python3 -m venv /tmp/scancode-venv
+/tmp/scancode-venv/bin/pip install scancode-toolkit
+/tmp/scancode-venv/bin/scancode --version
+```
+
+Time both tools against the same checkout:
+
+```bash
+go build -o /tmp/licenses-bench ./cmd/licenses
+
+/usr/bin/time -l /tmp/licenses-bench -json /path/to/repo > /dev/null
+/usr/bin/time -l /tmp/scancode-venv/bin/scancode -l \
+  --json-pp /tmp/scancode.json /path/to/repo
+```
+
+`licenses` exits 2 when the scan completes with per-file errors, such
+as manifests its parser does not model or a repository's own
+deliberately-invalid test fixtures. Timing and peak RSS are unaffected.
+
+`scancode -l` restricts scancode-toolkit to license detection. Its default
+process count is one less than the CPU count from 32.4.0 onward; pass `-n 1`
+for a single-worker run.
+
+`/usr/bin/time -l` on macOS and `-v` on GNU time report peak resident memory
+for the parent process only. scancode forks worker processes that each load
+the license index, so aggregate memory needs an external sampler. The README
+figures were collected by polling `ps -axo pid,ppid,rss,command` at 200 ms
+intervals across the process tree and taking the maximum sum. rust-lang/cargo
+was measured at commit `a07c49a989d565727725e5bb5a8038ff402006a8`.
 
 ## Corpus regeneration report
 

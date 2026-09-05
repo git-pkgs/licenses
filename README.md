@@ -6,6 +6,22 @@ against ScanCode's license rule corpus.
 The corpus is embedded in the package. Matching needs no network access, cgo,
 or Python.
 
+## Compared to ScanCode
+
+The command is a ~22 MB binary that builds one in-memory index and shares it
+across goroutines. `scancode-toolkit` 32.5.0 installs to ~710 MB and loads a
+separate copy of its 413 MB license index in each worker process.
+
+Scanning a checkout of [rust-lang/cargo](https://github.com/rust-lang/cargo)
+at `a07c49a` (2,950 files, 8-core M1 Pro, default flags) takes 0.85 s and
+246 MB peak RSS, against 94 s and 4.5 GB across nine processes for
+`scancode -l`. A 54-file repository takes 0.74 s against 23 s.
+
+`licenses` matches exact token sequences, whole-text hashes, and SPDX tag
+lines only. ScanCode also does approximate matching, so it reports detections
+in more files (58 vs 51 on the cargo checkout). Differences against ScanCode's
+own detection suite are tracked in the conformance baseline.
+
 ## Install
 
 Install the repository scanner with Homebrew:
