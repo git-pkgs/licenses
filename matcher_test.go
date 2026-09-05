@@ -693,28 +693,34 @@ func TestMatchScratchDropsOversizedBuffers(t *testing.T) {
 	small := &matchScratch{
 		ids:     make([]tokenize.ID, 10),
 		offsets: make([]tokenize.Offset, 10),
+		word:    make([]byte, 10),
 	}
 	small.dropOversized()
-	if cap(small.ids) != 10 || cap(small.offsets) != 10 {
-		t.Fatalf("small buffers dropped: ids cap=%d offsets cap=%d", cap(small.ids), cap(small.offsets))
+	if cap(small.ids) != 10 || cap(small.offsets) != 10 || cap(small.word) != 10 {
+		t.Fatalf("small buffers dropped: ids cap=%d offsets cap=%d word cap=%d",
+			cap(small.ids), cap(small.offsets), cap(small.word))
 	}
 
 	large := &matchScratch{
 		ids:     make([]tokenize.ID, 0, matchScratchTokenCap+1),
 		offsets: make([]tokenize.Offset, 0, matchScratchTokenCap+1),
+		word:    make([]byte, 0, matchScratchWordCap+1),
 	}
 	large.dropOversized()
-	if large.ids != nil || large.offsets != nil {
-		t.Fatalf("oversize buffers retained: ids cap=%d offsets cap=%d",
-			cap(large.ids), cap(large.offsets))
+	if large.ids != nil || large.offsets != nil || large.word != nil {
+		t.Fatalf("oversize buffers retained: ids cap=%d offsets cap=%d word cap=%d",
+			cap(large.ids), cap(large.offsets), cap(large.word))
 	}
 
 	at := &matchScratch{
 		ids:     make([]tokenize.ID, 0, matchScratchTokenCap),
 		offsets: make([]tokenize.Offset, 0, matchScratchTokenCap),
+		word:    make([]byte, 0, matchScratchWordCap),
 	}
 	at.dropOversized()
-	if cap(at.ids) != matchScratchTokenCap || cap(at.offsets) != matchScratchTokenCap {
-		t.Fatalf("at-cap buffers dropped: ids cap=%d offsets cap=%d", cap(at.ids), cap(at.offsets))
+	if cap(at.ids) != matchScratchTokenCap || cap(at.offsets) != matchScratchTokenCap ||
+		cap(at.word) != matchScratchWordCap {
+		t.Fatalf("at-cap buffers dropped: ids cap=%d offsets cap=%d word cap=%d",
+			cap(at.ids), cap(at.offsets), cap(at.word))
 	}
 }

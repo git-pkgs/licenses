@@ -252,9 +252,6 @@ func newMatchEngine(index corpus.Index) (*matchEngine, error) {
 	}, nil
 }
 
-// Match finds exact normalized rule matches in b. It returns
-// ErrTooManyMatches when the input exceeds the exact-match candidate limit;
-// callers can identify it with errors.Is.
 // matchScratch holds per-call buffers reused across Match invocations.
 type matchScratch struct {
 	ids     []tokenize.ID
@@ -264,7 +261,10 @@ type matchScratch struct {
 
 // Pooled buffers are capped so a single large input does not retain memory
 // for every subsequent call. The cap is on capacity, not length.
-const matchScratchTokenCap = 1 << 16
+const (
+	matchScratchTokenCap = 1 << 16
+	matchScratchWordCap  = 1 << 12
+)
 
 var matchScratchPool = sync.Pool{
 	New: func() any { return &matchScratch{} },
@@ -286,8 +286,14 @@ func (s *matchScratch) dropOversized() {
 	if cap(s.offsets) > matchScratchTokenCap {
 		s.offsets = nil
 	}
+	if cap(s.word) > matchScratchWordCap {
+		s.word = nil
+	}
 }
 
+// Match finds exact normalized rule matches in b. It returns
+// ErrTooManyMatches when the input exceeds the exact-match candidate limit;
+// callers can identify it with errors.Is.
 func (m *Matcher) Match(ctx context.Context, b []byte) (Result, error) {
 	return m.match(ctx, b, allExactFilters)
 }
