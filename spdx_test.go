@@ -265,37 +265,30 @@ func TestMatcherSPDXTagsMultiple(t *testing.T) {
 	}
 }
 
-func TestResultOverlapsSpan(t *testing.T) {
-	t.Parallel()
-
-	result := &Result{
-		Detections: []Detection{
-			{Matches: []Match{{Start: 10, End: 20}}},
-		},
-		Clues: []Match{{Start: 30, End: 40}},
+func TestMatcherSPDXPreservesSeparateDeclarations(t *testing.T) {
+	input := "SPDX-License-Identifier: GPL-3.0-or-later\n\n" +
+		"SPDX-License-Identifier: GPL-3.0-only"
+	matcher, err := New()
+	if err != nil {
+		t.Fatal(err)
 	}
-	tests := []struct {
-		start, end int
-		want       bool
-	}{
-		{start: 0, end: 5, want: false},
-		{start: 5, end: 10, want: false},
-		{start: 5, end: 11, want: true},
-		{start: 12, end: 18, want: true},
-		{start: 19, end: 25, want: true},
-		{start: 20, end: 25, want: false},
-		{start: 35, end: 45, want: true},
-		{start: 40, end: 50, want: false},
+	result, err := matcher.Match(context.Background(), []byte(input))
+	if err != nil {
+		t.Fatal(err)
 	}
-	for _, test := range tests {
-		if got := resultOverlapsSpan(result, test.start, test.end); got != test.want {
-			t.Errorf(
-				"resultOverlapsSpan([%d,%d)) = %v, want %v",
-				test.start,
-				test.end,
-				got,
-				test.want,
-			)
+	if len(result.Detections) != 2 {
+		t.Fatalf("detections = %+v", result.Detections)
+	}
+	for _, detection := range result.Detections {
+		if detection.Expression != "GPL-3.0-only" && detection.Expression != "GPL-3.0-or-later" {
+			t.Fatalf("unexpected expression: %s", detection.Expression)
+		}
+		if detection.Expression == "GPL-3.0-only" {
+			for _, match := range detection.Matches {
+				if match.Start < strings.LastIndex(input, "SPDX-License-Identifier:") {
+					t.Fatalf("prefix match survived: %+v", match)
+				}
+			}
 		}
 	}
 }

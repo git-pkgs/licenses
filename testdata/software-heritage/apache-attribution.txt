@@ -1,0 +1,31 @@
+// ------------------------------------------------------------------
+// NOTICE file containing copyrights,
+// in this case for XWiki Commons - Crypto - PKI API
+// ------------------------------------------------------------------
+
+XWiki Commons - Crypto - PKI API
+Copyright 2004-2014 XWiki
+
+This product includes/uses software developed by 'an unknown organization'
+  - javax.inject (http://code.google.com/p/atinject/)
+  - Bouncy Castle PKIX, CMS, EAC, TSP, PKCS, OCSP, CMP, and CRMF APIs (http://www.bouncycastle.org/java.html)
+  - Bouncy Castle Provider (http://www.bouncycastle.org/java.html)
+
+This product includes/uses software developed by 'Oracle' (http://www.oracle.com)
+  - JavaMail API (compat) (http://kenai.com/projects/javamail/mail)
+
+This product includes/uses software developed by 'QOS.ch' (http://www.qos.ch)
+  - SLF4J API Module (http://www.slf4j.org)
+
+This product includes/uses software developed by 'The Apache Software Foundation' (http://www.apache.org/)
+  - Commons IO (http://commons.apache.org/io/)
+  - Apache Commons Lang (http://commons.apache.org/proper/commons-lang/)
+
+This product includes/uses software developed by 'XWiki' (http://xwiki.org/)
+  - XWiki Commons - Component - API (http://extensions.xwiki.org?id=org.xwiki.commons:xwiki-commons-component-api:::/xwiki-commons-pom/xwiki-commons-core/xwiki-commons-component/xwiki-commons-component-api)
+  - XWiki Commons - Crypto - Common API (http://extensions.xwiki.org?id=org.xwiki.commons:xwiki-commons-crypto-common:::/xwiki-commons-pom/xwiki-commons-core/xwiki-commons-crypto/xwiki-commons-crypto-common)
+  - XWiki Commons - Crypto - Signer API (http://extensions.xwiki.org?id=org.xwiki.commons:xwiki-commons-crypto-signer:::/xwiki-commons-pom/xwiki-commons-core/xwiki-commons-crypto/xwiki-commons-crypto-signer)
+  - XWiki Commons - Stability (http://extensions.xwiki.org?id=org.xwiki.commons:xwiki-commons-stability:::/xwiki-commons-pom/xwiki-commons-core/xwiki-commons-stability)
+  - XWiki Commons - Text (http://extensions.xwiki.org?id=org.xwiki.commons:xwiki-commons-text:::/xwiki-commons-pom/xwiki-commons-core/xwiki-commons-text)
+
+
