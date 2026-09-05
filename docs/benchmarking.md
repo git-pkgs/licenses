@@ -104,7 +104,7 @@ go build -o /tmp/licenses-bench ./cmd/licenses
 ```
 
 `scancode -l` restricts scancode-toolkit to license detection. Its default
-process count is one less than the CPU count from 32.5.0 onward; pass `-n 1`
+process count is one less than the CPU count from 32.4.0 onward; pass `-n 1`
 for a single-worker run.
 
 `/usr/bin/time -l` on macOS and `-v` on GNU time report peak resident memory
