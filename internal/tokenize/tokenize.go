@@ -146,13 +146,22 @@ func (v *Vocabulary) Tokenize(input []byte) Tokens {
 // token.
 func (v *Vocabulary) TokenizeIDs(input []byte) IDTokens {
 	capacity := min(len(input)/averageWordBytes, maximumInitialTokenCapacity)
-	result := IDTokens{IDs: make([]ID, 0, capacity)}
-	var scratch []byte
+	return v.TokenizeIDsAppend(input, make([]ID, 0, capacity), nil)
+}
+
+// TokenizeIDsAppend is TokenizeIDs writing into ids[:0]. wordScratch, when
+// provided, is reused for case normalization and may be grown.
+func (v *Vocabulary) TokenizeIDsAppend(input []byte, ids []ID, wordScratch *[]byte) IDTokens {
+	result := IDTokens{IDs: ids[:0]}
+	var local []byte
+	if wordScratch == nil {
+		wordScratch = &local
+	}
 	scan(input, func(start, end int) {
 		if len(result.IDs) == 0 {
 			result.Start = start
 		}
-		result.IDs = append(result.IDs, v.lookup(input[start:end], &scratch))
+		result.IDs = append(result.IDs, v.lookup(input[start:end], wordScratch))
 		result.End = end
 	})
 	return result
@@ -161,7 +170,12 @@ func (v *Vocabulary) TokenizeIDs(input []byte) IDTokens {
 // TokenOffsets returns every normalized word's byte range. tokenCount is a
 // capacity hint and does not limit the number of returned offsets.
 func TokenOffsets(input []byte, tokenCount int) []Offset {
-	offsets := make([]Offset, 0, max(tokenCount, 0))
+	return TokenOffsetsAppend(input, make([]Offset, 0, max(tokenCount, 0)))
+}
+
+// TokenOffsetsAppend is TokenOffsets writing into offsets[:0].
+func TokenOffsetsAppend(input []byte, offsets []Offset) []Offset {
+	offsets = offsets[:0]
 	scan(input, func(start, end int) {
 		offsets = append(offsets, Offset{Start: start, End: end})
 	})

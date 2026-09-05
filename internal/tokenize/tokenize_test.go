@@ -168,6 +168,49 @@ func TestTokenizeMapsOffsetsAndUnknownWords(t *testing.T) {
 	}
 }
 
+func TestTokenizeAppendReusesAndTruncatesBuffers(t *testing.T) {
+	t.Parallel()
+
+	vocabulary, err := NewVocabulary([][]byte{[]byte("MIT Apache")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	long := []byte("MIT Apache MIT Apache MIT")
+	short := []byte("Apache")
+	apache, _ := vocabulary.Lookup("apache")
+
+	ids := make([]ID, 0, 8)
+	var word []byte
+	first := vocabulary.TokenizeIDsAppend(long, ids, &word)
+	if len(first.IDs) != 5 || &first.IDs[0] != &ids[:1][0] {
+		t.Fatalf("first append: len=%d, backing not reused", len(first.IDs))
+	}
+	second := vocabulary.TokenizeIDsAppend(short, first.IDs, &word)
+	if !slices.Equal(second.IDs, []ID{apache}) {
+		t.Fatalf("second IDs = %#v, want [%d]", second.IDs, apache)
+	}
+	if second.Start != 0 || second.End != 6 {
+		t.Fatalf("second span = %d-%d, want 0-6", second.Start, second.End)
+	}
+	if cap(second.IDs) != 8 {
+		t.Fatalf("second cap = %d, want 8", cap(second.IDs))
+	}
+	empty := vocabulary.TokenizeIDsAppend(nil, second.IDs, nil)
+	if len(empty.IDs) != 0 || empty.Start != 0 || empty.End != 0 {
+		t.Fatalf("empty append = %#v", empty)
+	}
+
+	offsets := make([]Offset, 0, 8)
+	firstOffsets := TokenOffsetsAppend(long, offsets)
+	if len(firstOffsets) != 5 || &firstOffsets[0] != &offsets[:1][0] {
+		t.Fatalf("first offset append: len=%d, backing not reused", len(firstOffsets))
+	}
+	secondOffsets := TokenOffsetsAppend(short, firstOffsets)
+	if !slices.Equal(secondOffsets, []Offset{{0, 6}}) || cap(secondOffsets) != 8 {
+		t.Fatalf("second offsets = %#v cap=%d", secondOffsets, cap(secondOffsets))
+	}
+}
+
 func TestVocabularyIsSafeForConcurrentTokenize(t *testing.T) {
 	t.Parallel()
 
