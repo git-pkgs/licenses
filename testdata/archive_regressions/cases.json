@@ -1,0 +1,328 @@
+{
+  "schema": 1,
+  "sample": "Ten reviewed cases drawn from a deterministic 100-release sample and its preceding ten-release pilot. Each fixture is a unique raw-content hash. Match text is compared by unique SHA-256 within each case.",
+  "scanner_source": "069a27367ca92850ae15c561936e2062ee21c63a",
+  "licensee_version": "10.1.0",
+  "cases": [
+    {
+      "id": "npm-express-4.18.2",
+      "ecosystem": "npm",
+      "package": "express",
+      "version": "4.18.2",
+      "archive_url": "https://registry.npmjs.org/express/-/express-4.18.2.tgz",
+      "archive_sha256": "8a4a69997fb326bd5966256709dbce2acff6cd53e048fc017c28b8c85f91c37e",
+      "archive_path": "LICENSE",
+      "fixture": "files/npm-express-4.18.2/LICENSE",
+      "content_sha256": "95a5762890e5c1c9808921cef095661fc482c5e1f0bba31446ac85595df6237c",
+      "source_license": "MIT",
+      "category": "exact-agreement",
+      "comparison_note": "Licensee 10.1.0 exact match",
+      "licensee_expression": "MIT",
+      "expected": {
+        "encoding": "utf-8",
+        "roles": [
+          "license"
+        ],
+        "detections": [
+          {
+            "expression": "MIT",
+            "identification": "identified"
+          }
+        ],
+        "clue_count": 0,
+        "matched_text_sha256": [
+          "c56a28b353fd6559ec7b73883b59bb02a1f75ff40542c601f9479dcb5a086753",
+          "f5bb9cb7bbc44ae3674184bced3d6afcbdf65566edafd00f9bb376703adc0639"
+        ]
+      }
+    },
+    {
+      "id": "pypi-requests-2.32.3",
+      "ecosystem": "pypi",
+      "package": "requests",
+      "version": "2.32.3",
+      "archive_url": "https://files.pythonhosted.org/packages/63/70/2bf7780ad2d390a8d301ad0b550f1581eadbd9a20f896afe06353c2a2913/requests-2.32.3.tar.gz",
+      "archive_sha256": "55365417734eb18255590a9ff9eb97e9e1da868d4ccd6402399eaf68af20a760",
+      "archive_path": "NOTICE",
+      "fixture": "files/pypi-requests-2.32.3/NOTICE",
+      "content_sha256": "f5110972dedad2b4e9d314518daf3b7d72d6e02e499acd802181de6f74571dcc",
+      "source_license": "Apache-2.0",
+      "category": "empty-result",
+      "expected": {
+        "encoding": "utf-8",
+        "roles": [
+          "notice"
+        ],
+        "detections": [],
+        "clue_count": 0,
+        "matched_text_sha256": []
+      }
+    },
+    {
+      "id": "npm-entities-8.0.0",
+      "ecosystem": "npm",
+      "package": "entities",
+      "version": "8.0.0",
+      "archive_url": "https://registry.npmjs.org/entities/-/entities-8.0.0.tgz",
+      "archive_sha256": "8e8b16388e19c12fc80f9f75f518a0f83d99428be6765a38f04c264a078cc25b",
+      "archive_path": "LICENSE",
+      "fixture": "files/npm-entities-8.0.0/LICENSE",
+      "content_sha256": "cb992345949ccd6e8394b2cd6c465f7b897c864f845937dbf64e8997f389e164",
+      "source_license": "BSD-2-Clause",
+      "category": "useful-exact-miss",
+      "comparison_note": "Licensee 10.1.0 Dice match at 98.54%",
+      "licensee_expression": "BSD-2-Clause",
+      "expected": {
+        "encoding": "utf-8",
+        "roles": [
+          "license"
+        ],
+        "detections": [],
+        "clue_count": 0,
+        "matched_text_sha256": []
+      }
+    },
+    {
+      "id": "pypi-numpy-2.5.2",
+      "ecosystem": "pypi",
+      "package": "numpy",
+      "version": "2.5.2",
+      "archive_url": "https://files.pythonhosted.org/packages/9a/80/db0b4559e57ec36362bedbb05530a87fafbcb6067708c946967a41d449e7/numpy-2.5.2.tar.gz",
+      "archive_sha256": "d482d171c406ae88c5b19cad3b6a1c4c5209f886ab74bc44c2c865c23f52d860",
+      "archive_path": "LICENSE.txt",
+      "fixture": "files/pypi-numpy-2.5.2/LICENSE.txt",
+      "content_sha256": "1be1df33863f97a7bc1c4d67980bd6c69c9a6fef0a5ee76e6ad6cb91e56e8491",
+      "source_license": "BSD-3-Clause",
+      "category": "useful-exact-miss",
+      "comparison_note": "Licensee 10.1.0 Dice match at 98.74%",
+      "licensee_expression": "BSD-3-Clause",
+      "expected": {
+        "encoding": "utf-8",
+        "roles": [
+          "license"
+        ],
+        "detections": [],
+        "clue_count": 0,
+        "matched_text_sha256": []
+      }
+    },
+    {
+      "id": "pypi-pandas-3.0.5",
+      "ecosystem": "pypi",
+      "package": "pandas",
+      "version": "3.0.5",
+      "archive_url": "https://files.pythonhosted.org/packages/be/4f/5f3422a2afec5ffc46308b79e53291365a93748b498ac2e58bead0197916/pandas-3.0.5.tar.gz",
+      "archive_sha256": "dca3734d6ab7c906e6730f0788b0a1dbb9f2467731f9711f77995c8e9d62d712",
+      "archive_path": "LICENSES/MUSL_LICENSE",
+      "fixture": "files/pypi-pandas-3.0.5/LICENSES/MUSL_LICENSE",
+      "content_sha256": "50a343c1ce9e27cd6c58023f13b91d2cd679861fe7fb6bbbbfbec3dcafc3583f",
+      "source_license": "MIT",
+      "category": "partial-identification",
+      "expected": {
+        "encoding": "utf-8",
+        "roles": [
+          "license"
+        ],
+        "detections": [
+          {
+            "expression": "BSD-2-Clause",
+            "identification": "identified"
+          },
+          {
+            "expression": "BSD-3-Clause",
+            "identification": "identified"
+          },
+          {
+            "expression": "LicenseRef-scancode-musl-exception",
+            "identification": "identified"
+          },
+          {
+            "expression": "LicenseRef-scancode-other-permissive",
+            "identification": "NOASSERTION"
+          },
+          {
+            "expression": "LicenseRef-scancode-public-domain OR LicenseRef-scancode-other-permissive",
+            "identification": "partial"
+          },
+          {
+            "expression": "MIT",
+            "identification": "identified"
+          }
+        ],
+        "clue_count": 0,
+        "matched_text_sha256": [
+          "0522dbc5e5be33e0dde06216fe375456c0c8eb52111a0b0403816186bc78d111",
+          "0ef02897462fd6267d277959d3911868b02f1b6ae214ad5a38d6526433e01c16",
+          "449892fa8e9f92d1cf9f09f5bc2ebfc0bf6b7f3b8018bc586d76ee1cab059db1",
+          "50c6eb40ea8232c793433cc28864e23c27287441f27fafb098f3d991b3942304",
+          "5c11ce1b86bf0c973712520e0febc6f26da2cf201a47f6b86717e8eebf25dc49",
+          "6738e64f1490f82d9f2ccddf635cfb036a7ce1273364a8f5854707279078ed8f",
+          "8c40653d743560f7328bae9ba9a497840f844d54b54b9d1072bd96c3476039d7",
+          "9d5d409470963b40d66d650bebd7cf987e71fa52607f8f40dac1fdbb1af6b644",
+          "aa49e672373ab31cd5b36c4caed0c6e7d1616d12eed9726704e3f39a75fc0b4a",
+          "b029d9672f083c561a70c73353521937d8fdea63007569b9c68f5774319864fd",
+          "bc53e565fad470f0354bf0e1a88b03951d32ff265d6b07c62d5e103aec503748",
+          "bcc7d47ef27211dbb6a9b97e26f3236e85d0c1032d9428ef2bdb3d2f2703d0df",
+          "d8a81c257f5a547e42665dabe0d83fc0af546c27b98edabcded4333aa8ed29f1",
+          "f73c1d673024e9405b8fb62f1e4ea36826cea3a427bba277f0697d4f3632b58f"
+        ]
+      }
+    },
+    {
+      "id": "rubygems-builder-3.3.0",
+      "ecosystem": "rubygems",
+      "package": "builder",
+      "version": "3.3.0",
+      "archive_url": "https://rubygems.org/downloads/builder-3.3.0.gem",
+      "archive_sha256": "497918d2f9dca528fdca4b88d84e4ef4387256d984b8154e9d5d3fe5a9c8835f",
+      "archive_path": "lib/builder.rb",
+      "fixture": "files/rubygems-builder-3.3.0/lib/builder.rb",
+      "content_sha256": "b6d54bb6b7bbdd774ad2906c1da670b6a8f12119ad5de6c71e4cc6d64cf15276",
+      "source_license": "LicenseRef-scancode-other-permissive",
+      "category": "noassertion",
+      "expected": {
+        "encoding": "utf-8",
+        "roles": [],
+        "detections": [
+          {
+            "expression": "LicenseRef-scancode-other-permissive",
+            "identification": "NOASSERTION"
+          }
+        ],
+        "clue_count": 0,
+        "matched_text_sha256": [
+          "259e37c954537a9e55b3a50d9deb2e3a6f0b9d9dab211fe24674beb700111650"
+        ]
+      }
+    },
+    {
+      "id": "cargo-futures-task-0.3.34",
+      "ecosystem": "cargo",
+      "package": "futures-task",
+      "version": "0.3.34",
+      "archive_url": "https://static.crates.io/crates/futures-task/futures-task-0.3.34.crate",
+      "archive_sha256": "cd417de3d1d015fc3bfd2b1ea46dfc7bab72ef86f1cc7cc9c78e728b34a6d1fd",
+      "archive_path": "README.md",
+      "fixture": "files/cargo-futures-task-0.3.34/README.md",
+      "content_sha256": "7a458e69ff008c35cffbbbcd2a14ad3ba7ad75201ce74df2d8f8d0fdcf6c4a89",
+      "source_license": "Apache-2.0 OR MIT",
+      "category": "dual-license",
+      "comparison_note": "Licensee 10.1.0 Apache-2.0 reference",
+      "licensee_expression": "Apache-2.0",
+      "expected": {
+        "encoding": "utf-8",
+        "roles": [],
+        "detections": [
+          {
+            "expression": "Apache-2.0",
+            "identification": "identified"
+          },
+          {
+            "expression": "LicenseRef-scancode-unknown-license-reference",
+            "identification": "NOASSERTION"
+          },
+          {
+            "expression": "MIT",
+            "identification": "identified"
+          }
+        ],
+        "clue_count": 0,
+        "matched_text_sha256": [
+          "1b7a45280246f35fb01cab2d321fa3a6e3f65d9a30857a5372d928db90cf7231",
+          "421f8eecf75a1acdd7907667d6c14e9f8870cb90a7cc499459c8418a93cdc8b0",
+          "65e5125e7c18f06e6d5ee724d6bbddb41620612dc52adfe2090f511ef096adee",
+          "6c09ec564736f2850579ff340cc6026eccad00925a7e2afd6a908413d97f12f8",
+          "8af97a3ab9686d020d952a51a26532ed997ccb3b6eadfd315493a38513fb9bc9",
+          "aba70acedb03d67ee088f3252d3d6d8bee4c2c0f357bd206eded53907e5bfd0e",
+          "dda6e5f49978b2355b302632860f2c0b8a7eeeb36426dcced89530e24477663e"
+        ]
+      }
+    },
+    {
+      "id": "pypi-pip-26.2.1",
+      "ecosystem": "pypi",
+      "package": "pip",
+      "version": "26.2.1",
+      "archive_url": "https://files.pythonhosted.org/packages/ae/15/4500e320e6b101ec3b719ae85b697d9940b6cda672bc555bd6016fc60c6f/pip-26.2.1.tar.gz",
+      "archive_sha256": "f6ad667e89a1fe78046c8f13232b247200f5258d7828f3f7883d660878e0813f",
+      "archive_path": "src/pip/_vendor/tomli/_types.py",
+      "fixture": "files/pypi-pip-26.2.1/src/pip/_vendor/tomli/_types.py",
+      "content_sha256": "f864c6d9552a929c7032ace654ee05ef26ca75d21b027b801d77e65907138b74",
+      "source_license": "MIT",
+      "category": "spdx-tag",
+      "expected": {
+        "encoding": "utf-8",
+        "roles": [],
+        "detections": [
+          {
+            "expression": "MIT",
+            "identification": "identified"
+          },
+          {
+            "expression": "Python-2.0",
+            "identification": "identified"
+          }
+        ],
+        "clue_count": 0,
+        "matched_text_sha256": [
+          "2799a43bcdf215d0c96b4b5fd23f47e2dbd1328e37d138f6115900a3b5c6e5e7",
+          "adcef9d88762da9951c56d4d7b61235fb458f9d2bbc4516538e5a1b4d214aed4"
+        ]
+      }
+    },
+    {
+      "id": "maven-javax.servlet%3Ajavax.servlet-api-4.0.1",
+      "ecosystem": "maven",
+      "package": "javax.servlet:javax.servlet-api",
+      "version": "4.0.1",
+      "archive_url": "https://repo.maven.apache.org/maven2/javax/servlet/javax.servlet-api/4.0.1/javax.servlet-api-4.0.1.jar",
+      "archive_sha256": "83a03dd877d3674576f0da7b90755c8524af099ccf0607fc61aa971535ad7c60",
+      "archive_path": "javax/servlet/LocalStrings_fr.properties",
+      "fixture": "files/maven-javax.servlet%3Ajavax.servlet-api-4.0.1/javax/servlet/LocalStrings_fr.properties",
+      "content_sha256": "3ec3a66a49dc1d024ef846626e266ae7bfd4c1e598e748b42eec2ddf9fbc842c",
+      "source_license": "Apache-2.0",
+      "category": "encoding",
+      "expected": {
+        "encoding": "iso-8859-1",
+        "roles": [],
+        "detections": [
+          {
+            "expression": "Apache-2.0",
+            "identification": "identified"
+          }
+        ],
+        "clue_count": 0,
+        "matched_text_sha256": [
+          "3ccdaac8227991512b5275523c785051cd2a32df9f0eb9a3f129f1b88a7d4636"
+        ]
+      }
+    },
+    {
+      "id": "rubygems-rack-3.1.8",
+      "ecosystem": "rubygems",
+      "package": "rack",
+      "version": "3.1.8",
+      "archive_url": "https://rubygems.org/downloads/rack-3.1.8.gem",
+      "archive_sha256": "d3fbcbca43dc2b43c9c6d7dfbac01667ae58643c42cea10013d0da970218a1b1",
+      "archive_path": "lib/rack/sendfile.rb",
+      "fixture": "files/rubygems-rack-3.1.8/lib/rack/sendfile.rb",
+      "content_sha256": "6d2d3213769a44b5381627c9c6d387a1f87d3c4633be4b3a3e053edef3450e88",
+      "source_license": "MIT",
+      "category": "short-reference-policy",
+      "expected": {
+        "encoding": "utf-8",
+        "roles": [],
+        "detections": [
+          {
+            "expression": "Apache-2.0",
+            "identification": "identified"
+          }
+        ],
+        "clue_count": 0,
+        "matched_text_sha256": [
+          "de7eeb1ec534ce5704b4fb4b0aba9ea51b7756ebc914f1b57b060817ae01c6ff"
+        ]
+      }
+    }
+  ]
+}
