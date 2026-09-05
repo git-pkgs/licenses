@@ -3,7 +3,7 @@
   "mode": "exact-core expressions, duplicates and order ignored; known divergences are won't-fix",
   "cases": 1786,
   "evaluated": 1786,
-  "passed": 1535,
+  "passed": 1538,
   "divergences": [
     {
       "path": "datadriven/lic1/COPYING.gplv3",
@@ -339,7 +339,6 @@
         "zlib"
       ],
       "actual": [
-        "apache-2.0",
         "autoconf-simple-exception",
         "bsd-new",
         "classpath-exception-2.0",
@@ -362,7 +361,7 @@
         "unicode"
       ],
       "stage": "wrong-exact-rule-set",
-      "note": "won't-fix exact core: 5 expected expression(s) missing and 11 unexpected exact expression(s) present"
+      "note": "won't-fix exact core: 5 expected expression(s) missing and 10 unexpected exact expression(s) present"
     },
     {
       "path": "datadriven/lic1/eclipse-openj9_html2.html",
@@ -1325,30 +1324,12 @@
       "note": "won't-fix exact core: the filter retained 2 unexpected expression(s)"
     },
     {
-      "path": "datadriven/lic2/apache-1.1_1.txt",
-      "expected": [
-        "apache-1.1"
-      ],
-      "actual": [
-        "apache-1.1",
-        "bsd-simplified"
-      ],
-      "exact_expected": [
-        "apache-1.1"
-      ],
-      "stage": "filter-retained",
-      "note": "won't-fix exact core: the filter retained 1 unexpected expression(s)"
-    },
-    {
       "path": "datadriven/lic2/apache-1.1_11.txt",
       "expected": [
         "apache-1.1"
       ],
-      "actual": [
-        "bsd-simplified"
-      ],
-      "stage": "wrong-exact-rule-set",
-      "note": "won't-fix exact core: 1 expected expression(s) missing and 1 unexpected exact expression(s) present"
+      "stage": "no-exact-match",
+      "note": "won't-fix exact core: no exact match for 1 expected expression(s)"
     },
     {
       "path": "datadriven/lic2/apache-1.1_14.txt",
@@ -1370,26 +1351,8 @@
       "expected": [
         "apache-1.1"
       ],
-      "actual": [
-        "bsd-simplified"
-      ],
-      "stage": "wrong-exact-rule-set",
-      "note": "won't-fix exact core: 1 expected expression(s) missing and 1 unexpected exact expression(s) present"
-    },
-    {
-      "path": "datadriven/lic2/apache-1.1_16.txt",
-      "expected": [
-        "apache-1.1"
-      ],
-      "actual": [
-        "apache-1.1",
-        "bsd-simplified"
-      ],
-      "exact_expected": [
-        "apache-1.1"
-      ],
-      "stage": "filter-retained",
-      "note": "won't-fix exact core: the filter retained 1 unexpected expression(s)"
+      "stage": "no-exact-match",
+      "note": "won't-fix exact core: no exact match for 1 expected expression(s)"
     },
     {
       "path": "datadriven/lic2/apache-1.1_19.txt",
@@ -1398,14 +1361,13 @@
       ],
       "actual": [
         "apache-1.1",
-        "apache-2.0",
-        "bsd-simplified"
+        "apache-2.0"
       ],
       "exact_expected": [
         "apache-1.1"
       ],
       "stage": "filter-retained",
-      "note": "won't-fix exact core: the filter retained 2 unexpected expression(s)"
+      "note": "won't-fix exact core: the filter retained 1 unexpected expression(s)"
     },
     {
       "path": "datadriven/lic2/apache-1.1_21.txt",
@@ -1415,25 +1377,21 @@
       "actual": [
         "apache-1.1",
         "apache-2.0",
-        "bsd-simplified",
         "osl-3.0"
       ],
       "exact_expected": [
         "apache-1.1"
       ],
       "stage": "filter-retained",
-      "note": "won't-fix exact core: the filter retained 3 unexpected expression(s)"
+      "note": "won't-fix exact core: the filter retained 2 unexpected expression(s)"
     },
     {
       "path": "datadriven/lic2/apache-1.1_25.txt",
       "expected": [
         "apache-1.1"
       ],
-      "actual": [
-        "bsd-simplified"
-      ],
-      "stage": "wrong-exact-rule-set",
-      "note": "won't-fix exact core: 1 expected expression(s) missing and 1 unexpected exact expression(s) present"
+      "stage": "no-exact-match",
+      "note": "won't-fix exact core: no exact match for 1 expected expression(s)"
     },
     {
       "path": "datadriven/lic2/apache-1.1_8.txt",
@@ -1442,29 +1400,13 @@
         "proprietary-license"
       ],
       "actual": [
-        "bsd-simplified",
         "proprietary-license"
       ],
       "exact_expected": [
         "proprietary-license"
       ],
-      "stage": "wrong-exact-rule-set",
-      "note": "won't-fix exact core: 1 expected expression(s) missing and 1 unexpected exact expression(s) present"
-    },
-    {
-      "path": "datadriven/lic2/apache-1.1_cyberneko.txt",
-      "expected": [
-        "apache-1.1"
-      ],
-      "actual": [
-        "apache-1.1",
-        "bsd-simplified"
-      ],
-      "exact_expected": [
-        "apache-1.1"
-      ],
-      "stage": "filter-retained",
-      "note": "won't-fix exact core: the filter retained 1 unexpected expression(s)"
+      "stage": "partial-exact-rule-set",
+      "note": "won't-fix exact core: 1 expected expression(s) had no exact match"
     },
     {
       "path": "datadriven/lic2/apache-2.0_and_apache-2.0_and_bsd-new_and_gpl_and_other.txt",
@@ -1991,33 +1933,24 @@
       "expected": [
         "bsd-new"
       ],
-      "actual": [
-        "bsd-simplified"
-      ],
-      "stage": "wrong-exact-rule-set",
-      "note": "won't-fix exact core: 1 expected expression(s) missing and 1 unexpected exact expression(s) present"
+      "stage": "no-exact-match",
+      "note": "won't-fix exact core: no exact match for 1 expected expression(s)"
     },
     {
       "path": "datadriven/lic2/bsd-new_12.txt",
       "expected": [
         "bsd-new"
       ],
-      "actual": [
-        "bsd-simplified"
-      ],
-      "stage": "wrong-exact-rule-set",
-      "note": "won't-fix exact core: 1 expected expression(s) missing and 1 unexpected exact expression(s) present"
+      "stage": "no-exact-match",
+      "note": "won't-fix exact core: no exact match for 1 expected expression(s)"
     },
     {
       "path": "datadriven/lic2/bsd-new_13.txt",
       "expected": [
         "bsd-new"
       ],
-      "actual": [
-        "bsd-simplified"
-      ],
-      "stage": "wrong-exact-rule-set",
-      "note": "won't-fix exact core: 1 expected expression(s) missing and 1 unexpected exact expression(s) present"
+      "stage": "no-exact-match",
+      "note": "won't-fix exact core: no exact match for 1 expected expression(s)"
     },
     {
       "path": "datadriven/lic2/bsd-new_147.txt",
@@ -2064,22 +1997,16 @@
       "expected": [
         "bsd-new"
       ],
-      "actual": [
-        "bsd-simplified"
-      ],
-      "stage": "wrong-exact-rule-set",
-      "note": "won't-fix exact core: 1 expected expression(s) missing and 1 unexpected exact expression(s) present"
+      "stage": "no-exact-match",
+      "note": "won't-fix exact core: no exact match for 1 expected expression(s)"
     },
     {
       "path": "datadriven/lic2/bsd-new_2.txt",
       "expected": [
         "bsd-new"
       ],
-      "actual": [
-        "bsd-simplified"
-      ],
-      "stage": "wrong-exact-rule-set",
-      "note": "won't-fix exact core: 1 expected expression(s) missing and 1 unexpected exact expression(s) present"
+      "stage": "no-exact-match",
+      "note": "won't-fix exact core: no exact match for 1 expected expression(s)"
     },
     {
       "path": "datadriven/lic2/bsd-new_24.txt",
@@ -2118,22 +2045,16 @@
       "expected": [
         "bsd-new"
       ],
-      "actual": [
-        "bsd-simplified"
-      ],
-      "stage": "wrong-exact-rule-set",
-      "note": "won't-fix exact core: 1 expected expression(s) missing and 1 unexpected exact expression(s) present"
+      "stage": "no-exact-match",
+      "note": "won't-fix exact core: no exact match for 1 expected expression(s)"
     },
     {
       "path": "datadriven/lic2/bsd-new_61.txt",
       "expected": [
         "bsd-new"
       ],
-      "actual": [
-        "bsd-simplified"
-      ],
-      "stage": "wrong-exact-rule-set",
-      "note": "won't-fix exact core: 1 expected expression(s) missing and 1 unexpected exact expression(s) present"
+      "stage": "no-exact-match",
+      "note": "won't-fix exact core: no exact match for 1 expected expression(s)"
     },
     {
       "path": "datadriven/lic2/bsd-new_63.txt",
@@ -2148,11 +2069,8 @@
       "expected": [
         "bsd-new"
       ],
-      "actual": [
-        "bsd-simplified"
-      ],
-      "stage": "wrong-exact-rule-set",
-      "note": "won't-fix exact core: 1 expected expression(s) missing and 1 unexpected exact expression(s) present"
+      "stage": "no-exact-match",
+      "note": "won't-fix exact core: no exact match for 1 expected expression(s)"
     },
     {
       "path": "datadriven/lic2/bsd-new_84.txt",
@@ -2331,33 +2249,24 @@
       "expected": [
         "bsd-original"
       ],
-      "actual": [
-        "bsd-simplified"
-      ],
-      "stage": "wrong-exact-rule-set",
-      "note": "won't-fix exact core: 1 expected expression(s) missing and 1 unexpected exact expression(s) present"
+      "stage": "no-exact-match",
+      "note": "won't-fix exact core: no exact match for 1 expected expression(s)"
     },
     {
       "path": "datadriven/lic2/bsd-original_1.txt",
       "expected": [
         "bsd-original"
       ],
-      "actual": [
-        "bsd-simplified"
-      ],
-      "stage": "wrong-exact-rule-set",
-      "note": "won't-fix exact core: 1 expected expression(s) missing and 1 unexpected exact expression(s) present"
+      "stage": "no-exact-match",
+      "note": "won't-fix exact core: no exact match for 1 expected expression(s)"
     },
     {
       "path": "datadriven/lic2/bsd-original_2.txt",
       "expected": [
         "bsd-original"
       ],
-      "actual": [
-        "bsd-simplified"
-      ],
-      "stage": "wrong-exact-rule-set",
-      "note": "won't-fix exact core: 1 expected expression(s) missing and 1 unexpected exact expression(s) present"
+      "stage": "no-exact-match",
+      "note": "won't-fix exact core: no exact match for 1 expected expression(s)"
     },
     {
       "path": "datadriven/lic2/bsd-original_and_bsd-simplified_and_mit_and_mit_and_other.txt",
@@ -2401,11 +2310,10 @@
         "bsd-original"
       ],
       "actual": [
-        "bsd-simplified",
         "warranty-disclaimer"
       ],
       "stage": "wrong-exact-rule-set",
-      "note": "won't-fix exact core: 1 expected expression(s) missing and 2 unexpected exact expression(s) present"
+      "note": "won't-fix exact core: 1 expected expression(s) missing and 1 unexpected exact expression(s) present"
     },
     {
       "path": "datadriven/lic2/github_keys/lgpl.txt",
@@ -4021,11 +3929,8 @@
       "expected": [
         "quickfix-1.0"
       ],
-      "actual": [
-        "bsd-simplified"
-      ],
-      "stage": "wrong-exact-rule-set",
-      "note": "won't-fix exact core: 1 expected expression(s) missing and 1 unexpected exact expression(s) present"
+      "stage": "no-exact-match",
+      "note": "won't-fix exact core: no exact match for 1 expected expression(s)"
     },
     {
       "path": "datadriven/lic4/ruby.txt",

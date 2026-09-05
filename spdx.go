@@ -2,7 +2,9 @@ package licenses
 
 import (
 	"bytes"
+	"cmp"
 	"slices"
+	"sort"
 	"strings"
 
 	"github.com/git-pkgs/licenses/internal/corpus"
@@ -104,75 +106,118 @@ func (index spdxIndex) reportExpression(expression string) (string, []string) {
 	return rewritten, identifiers
 }
 
-// matchSPDXTags scans input for SPDX-License-Identifier tags and appends a
-// tag-kind match per resolved expression. The scan is a single pass anchored
-// on 's' bytes with a case-insensitive prefix check. Tags whose span sits
-// within an existing rule match are dropped so a partial tag inside a larger
-// notice does not add a second, narrower expression.
+type spdxSpan struct {
+	start, end int
+}
+
+type spdxDeclaration struct {
+	anchor, start, end int
+	covered            bool
+}
+
+// matchSPDXTags preserves complete declarations over their component matches.
 func (m *Matcher) matchSPDXTags(input []byte, result *Result) bool {
-	matched := false
-	for offset := 0; offset < len(input); {
+	first := indexSPDXAnchor(input, 0)
+	if first < 0 {
+		return false
+	}
+	coverage := spdxMatchSpans(result)
+	next, coveredEnd := 0, 0
+	var declarations []spdxDeclaration
+	pending := make(map[string]*Detection)
+	for offset := first; offset < len(input); {
 		anchor := indexSPDXAnchor(input, offset)
 		if anchor < 0 {
-			return matched
+			break
 		}
 		tagEnd := spdxTagEnd(input, anchor)
 		if tagEnd < 0 {
 			offset = anchor + 1
 			continue
 		}
-		expressionStart, expressionEnd := spdxExpressionSpan(input, tagEnd)
-		offset = max(expressionEnd, tagEnd)
-		if expressionStart >= expressionEnd {
+		start, end := spdxExpressionSpan(input, tagEnd)
+		offset = max(end, tagEnd)
+		if start >= end {
 			continue
 		}
-		if resultOverlapsSpan(result, anchor, expressionEnd) {
+		for next < len(coverage) && coverage[next].start <= start {
+			coveredEnd = max(coveredEnd, coverage[next].end)
+			next++
+		}
+		if coveredEnd >= end {
+			declarations = append(declarations, spdxDeclaration{anchor: anchor, start: start, end: end, covered: true})
 			continue
 		}
-		expression, identifiers, scanCodeIDs := m.engine.spdx.normalizeExpression(
-			input[expressionStart:expressionEnd],
-		)
+		expression, identifiers, scanCodeIDs := m.engine.spdx.normalizeExpression(input[start:end])
 		if expression == "" {
 			continue
 		}
+		declarations = append(declarations, spdxDeclaration{anchor: anchor, start: start, end: end})
 		match := Match{
-			RuleID:     spdxTagRuleID,
-			LicenseIDs: identifiers,
-			Kind:       KindTag,
-			Method:     SpdxID,
-			Score:      fullScore,
-			Coverage:   fullScore,
-			Start:      anchor,
-			End:        expressionEnd,
+			RuleID: spdxTagRuleID, LicenseIDs: identifiers, Kind: KindTag, Method: SpdxID,
+			Score: fullScore, Coverage: fullScore, Start: anchor, End: end,
 		}
 		if m.matchedText {
-			match.Matched = slices.Clone(input[anchor:expressionEnd])
+			match.Matched = slices.Clone(input[anchor:end])
 		}
-		addDetection(result, expression, identificationForIDs(scanCodeIDs), match)
-		matched = true
+		detection := pending[expression]
+		if detection == nil {
+			detection = &Detection{Expression: expression, Identification: identificationForIDs(scanCodeIDs)}
+			pending[expression] = detection
+		}
+		detection.Matches = append(detection.Matches, match)
 	}
-	return matched
+	changed := removeMatches(result, func(match Match) bool {
+		index := sort.Search(len(declarations), func(i int) bool { return declarations[i].end >= match.End })
+		if index == len(declarations) {
+			return false
+		}
+		declaration := declarations[index]
+		return match.Start >= declaration.anchor &&
+			(!declaration.covered || match.Start > declaration.start || match.End < declaration.end)
+	})
+	if len(pending) == 0 {
+		return changed
+	}
+	for index := range result.Detections {
+		detection := &result.Detections[index]
+		if addition := pending[detection.Expression]; addition != nil {
+			detection.Matches = append(detection.Matches, addition.Matches...)
+			delete(pending, detection.Expression)
+		}
+	}
+	for _, detection := range pending {
+		result.Detections = append(result.Detections, *detection)
+	}
+	return true
 }
 
-// resultOverlapsSpan reports whether any existing detection or clue match
-// overlaps [start, end). An SPDX tag whose expression bytes are already
-// covered by a corpus rule match is redundant: the rule carries richer
-// context (compound expressions, deprecated-id remapping) than the tag
-// resolver.
-func resultOverlapsSpan(result *Result, start, end int) bool {
+// Earlier declarations cannot remove a match extending over a later expression.
+func spdxMatchSpans(result *Result) []spdxSpan {
+	var spans []spdxSpan
 	for _, detection := range result.Detections {
 		for _, match := range detection.Matches {
-			if match.Start < end && start < match.End {
-				return true
-			}
+			spans = append(spans, spdxSpan{match.Start, match.End})
 		}
 	}
-	for _, match := range result.Clues {
-		if match.Start < end && start < match.End {
-			return true
-		}
+	slices.SortFunc(spans, func(a, b spdxSpan) int { return cmp.Compare(a.start, b.start) })
+	return spans
+}
+
+func removeMatches(result *Result, remove func(Match) bool) bool {
+	changed := false
+	for index := range result.Detections {
+		detection := &result.Detections[index]
+		before := len(detection.Matches)
+		detection.Matches = slices.DeleteFunc(detection.Matches, remove)
+		changed = changed || before != len(detection.Matches)
 	}
-	return false
+	result.Detections = slices.DeleteFunc(result.Detections, func(detection Detection) bool {
+		return len(detection.Matches) == 0
+	})
+	before := len(result.Clues)
+	result.Clues = slices.DeleteFunc(result.Clues, remove)
+	return changed || before != len(result.Clues)
 }
 
 // indexSPDXAnchor returns the next offset at which the four bytes SPDX begin,

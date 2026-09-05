@@ -209,6 +209,12 @@ func newMatchEngine(index corpus.Index) (*matchEngine, error) {
 	ruleMetadata := make([]uint32, len(index.Rules))
 	var metadata []expressionMetadata
 	for ruleIndex, rule := range index.Rules {
+		// Foundation attribution alone does not identify an Apache license version.
+		switch rule.ID {
+		case "apache-2.0_required_phrase_31.RULE", "apache-2.0_required_phrase_42.RULE":
+			rule.Flags &^= corpus.FlagLicenseReference
+			rule.Flags |= corpus.FlagLicenseClue
+		}
 		rules[ruleIndex] = matchRule{
 			ID:         rule.ID,
 			Expression: rule.Expression,
@@ -348,7 +354,8 @@ func (m *Matcher) match(ctx context.Context, b []byte, filters exactFilterOption
 	); err != nil {
 		return Result{}, err
 	}
-	if m.matchSPDXTags(b, &result) {
+	changed := downgradeContinuedText(b, &result)
+	if m.matchSPDXTags(b, &result) || changed {
 		sortResult(&result)
 	} else {
 		sortDetections(result.Detections)
@@ -656,25 +663,6 @@ func ruleKind(flags uint16) Kind {
 	default:
 		return KindUnknown
 	}
-}
-
-func addDetection(
-	result *Result,
-	expression string,
-	identification Identification,
-	match Match,
-) {
-	for index := range result.Detections {
-		if result.Detections[index].Expression == expression {
-			result.Detections[index].Matches = append(result.Detections[index].Matches, match)
-			return
-		}
-	}
-	result.Detections = append(result.Detections, Detection{
-		Expression:     expression,
-		Identification: identification,
-		Matches:        []Match{match},
-	})
 }
 
 func identificationForIDs(identifiers []string) Identification {
