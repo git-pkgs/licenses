@@ -1,0 +1,1006 @@
+{
+  "schema": 1,
+  "scanner_source": "069a27367ca92850ae15c561936e2062ee21c63a",
+  "comparator": {
+    "name": "Licensee",
+    "version": "10.1.0"
+  },
+  "selection": {
+    "seed": "licenses-issue-4-2026-09-05-v1",
+    "method": "Twenty packages per frozen 100-package population, sorted by SHA-256(seed NUL ecosystem NUL name); exclude the ten targeted pilot package names. Use the release number recorded in the snapshot. Failed or ineligible downloads stay in the outcome denominator and are not replaced.",
+    "populations": [
+      {
+        "ecosystem": "npm",
+        "source_url": "https://packages.ecosyste.ms/api/v1/registries/npmjs.org/packages?per_page=100&sort=downloads&order=desc",
+        "sha256": "41a46e4db5b86b2d4fe551e1c388b41e2c72c4265c2ab11dcf5b82d85c40c140",
+        "records": 100,
+        "ranking": "downloads",
+        "selected": 20
+      },
+      {
+        "ecosystem": "pypi",
+        "source_url": "https://packages.ecosyste.ms/api/v1/registries/pypi.org/packages?per_page=100&sort=downloads&order=desc",
+        "sha256": "5d5dcac180b4af1681839bccd399580ede832bb929cf6e9f9dfe58d0039c4357",
+        "records": 100,
+        "ranking": "downloads",
+        "selected": 20
+      },
+      {
+        "ecosystem": "rubygems",
+        "source_url": "https://packages.ecosyste.ms/api/v1/registries/rubygems.org/packages?per_page=100&sort=downloads&order=desc",
+        "sha256": "f478ed08f52f2c9c7fb0ab6d88341a1343f900ab98b2ac3926ed12fb3e621c28",
+        "records": 100,
+        "ranking": "downloads",
+        "selected": 20
+      },
+      {
+        "ecosystem": "cargo",
+        "source_url": "https://packages.ecosyste.ms/api/v1/registries/crates.io/packages?per_page=100&sort=downloads&order=desc",
+        "sha256": "a070d2ada5dbd477d22c3dab89785a183b81c9c7b97015589ef546750f51396a",
+        "records": 100,
+        "ranking": "downloads",
+        "selected": 20
+      },
+      {
+        "ecosystem": "maven",
+        "source_url": "https://packages.ecosyste.ms/api/v1/registries/repo1.maven.org/packages?per_page=100&sort=dependent_packages_count&order=desc",
+        "sha256": "b4e448cd43d27df71bd77cd0f428e8196eab0a9da395c6de43674d58f391bd4d",
+        "records": 100,
+        "ranking": "dependent_packages_count",
+        "selected": 20
+      }
+    ]
+  },
+  "summary": {
+    "selected_releases": 100,
+    "processed_releases": 100,
+    "release_outcomes": {
+      "complete": 99,
+      "complete_with_scan_errors": 1
+    },
+    "input_occurrences": 30672,
+    "unique_input_hashes": 29649,
+    "matched_text_occurrences": 3933,
+    "unique_matched_text_hashes": 1328,
+    "comparison_occurrences": 137,
+    "unique_same_file_comparisons": 115,
+    "comparison_states": {
+      "equal_expression_sets": 84,
+      "licensee_unresolved": 10,
+      "different_expression_sets": 21
+    },
+    "comparator_matchers": {
+      "exact": 97,
+      "reference": 27,
+      "unresolved": 10,
+      "dice": 3
+    },
+    "useful_exact_misses": 3,
+    "scan_errors": 4
+  },
+  "useful_exact_misses": [
+    {
+      "archive": "npm-entities-8.0.0",
+      "path": "LICENSE",
+      "sha256": "cb992345949ccd6e8394b2cd6c465f7b897c864f845937dbf64e8997f389e164",
+      "licensee": "BSD-2-Clause",
+      "confidence": 98.53658536585365
+    },
+    {
+      "archive": "pypi-numpy-2.5.2",
+      "path": "LICENSE.txt",
+      "sha256": "1be1df33863f97a7bc1c4d67980bd6c69c9a6fef0a5ee76e6ad6cb91e56e8491",
+      "licensee": "BSD-3-Clause",
+      "confidence": 98.74476987447699
+    },
+    {
+      "archive": "rubygems-ffi-1.17.4",
+      "path": "LICENSE",
+      "sha256": "bb343aa812eaaddbaf97814edaf86977b18d3cc5ced3122d43bddf96cf0443dd",
+      "licensee": "BSD-3-Clause",
+      "confidence": 98.7551867219917
+    }
+  ],
+  "releases": [
+    {
+      "id": "npm-strip-ansi-7.2.0",
+      "ecosystem": "npm",
+      "version": "7.2.0",
+      "status": "complete",
+      "archive_url": "https://registry.npmjs.org/strip-ansi/-/strip-ansi-7.2.0.tgz",
+      "archive_sha256": "2fa01de86a5022ef32773abbc4e84a53a1c5d31f5a5cbf03ed2575f10408543f",
+      "package": "strip-ansi"
+    },
+    {
+      "id": "npm-%40esbuild%2Flinux-x64-0.28.2",
+      "ecosystem": "npm",
+      "version": "0.28.2",
+      "status": "complete",
+      "archive_url": "https://registry.npmjs.org/@esbuild/linux-x64/-/linux-x64-0.28.2.tgz",
+      "archive_sha256": "9573bb2233aab0f9ea7647d5cca9726113cc1768de61d66b17267f4db84488f6",
+      "package": "@esbuild/linux-x64"
+    },
+    {
+      "id": "npm-color-name-2.1.1",
+      "ecosystem": "npm",
+      "version": "2.1.1",
+      "status": "complete",
+      "archive_url": "https://registry.npmjs.org/color-name/-/color-name-2.1.1.tgz",
+      "archive_sha256": "94fd34b8f6b573fd0a4a07f5f029beaf2c8ee9a2b7cd0d47fdd6c95c89b50125",
+      "package": "color-name"
+    },
+    {
+      "id": "npm-whatwg-url-17.1.0",
+      "ecosystem": "npm",
+      "version": "17.1.0",
+      "status": "complete",
+      "archive_url": "https://registry.npmjs.org/whatwg-url/-/whatwg-url-17.1.0.tgz",
+      "archive_sha256": "41859594cde0afc9250957eabc6f8bfd66706ea130df702bc3f52edf78c841c0",
+      "package": "whatwg-url"
+    },
+    {
+      "id": "npm-supports-color-11.0.0",
+      "ecosystem": "npm",
+      "version": "11.0.0",
+      "status": "complete",
+      "archive_url": "https://registry.npmjs.org/supports-color/-/supports-color-11.0.0.tgz",
+      "archive_sha256": "28446d11b34648b29c57775d983b7ae7e88e9070cfa9861e28305678cd6bb4a3",
+      "package": "supports-color"
+    },
+    {
+      "id": "npm-%40babel%2Ftypes-8.0.4",
+      "ecosystem": "npm",
+      "version": "8.0.4",
+      "status": "complete",
+      "archive_url": "https://registry.npmjs.org/@babel/types/-/types-8.0.4.tgz",
+      "archive_sha256": "e5d60e08e253852eb039fd7a3150c461764eb4ff745a3f8d8b804ca8c02bd239",
+      "package": "@babel/types"
+    },
+    {
+      "id": "npm-safe-buffer-5.2.1",
+      "ecosystem": "npm",
+      "version": "5.2.1",
+      "status": "complete",
+      "archive_url": "https://registry.npmjs.org/safe-buffer/-/safe-buffer-5.2.1.tgz",
+      "archive_sha256": "5d181804516c4a693a384272a7bd0e42d17e0d4b301ccfbe408669ccafdcb3e8",
+      "package": "safe-buffer"
+    },
+    {
+      "id": "npm-mime-db-1.54.0",
+      "ecosystem": "npm",
+      "version": "1.54.0",
+      "status": "complete",
+      "archive_url": "https://registry.npmjs.org/mime-db/-/mime-db-1.54.0.tgz",
+      "archive_sha256": "2b21054e65d0eabd58c5002d2713e968dd47b15700bfed4b7281a344ded1c420",
+      "package": "mime-db"
+    },
+    {
+      "id": "npm-yargs-18.1.0",
+      "ecosystem": "npm",
+      "version": "18.1.0",
+      "status": "complete",
+      "archive_url": "https://registry.npmjs.org/yargs/-/yargs-18.1.0.tgz",
+      "archive_sha256": "2bbc63973e98118422e316d8ae90fe4f07114ffc46d8d20523f2d0589b232252",
+      "package": "yargs"
+    },
+    {
+      "id": "npm-yallist-5.0.0",
+      "ecosystem": "npm",
+      "version": "5.0.0",
+      "status": "complete",
+      "archive_url": "https://registry.npmjs.org/yallist/-/yallist-5.0.0.tgz",
+      "archive_sha256": "7c9d43dbab7cab3b3133b0e6a5af14014482285316b39ec9f508efadd9ebce95",
+      "package": "yallist"
+    },
+    {
+      "id": "npm-globals-17.12.0",
+      "ecosystem": "npm",
+      "version": "17.12.0",
+      "status": "complete",
+      "archive_url": "https://registry.npmjs.org/globals/-/globals-17.12.0.tgz",
+      "archive_sha256": "beadd5981449de06f51b2c5a023b254c8fd2a351e8c706580b4c28764048b7e6",
+      "package": "globals"
+    },
+    {
+      "id": "npm-ansi-regex-6.3.0",
+      "ecosystem": "npm",
+      "version": "6.3.0",
+      "status": "complete",
+      "archive_url": "https://registry.npmjs.org/ansi-regex/-/ansi-regex-6.3.0.tgz",
+      "archive_sha256": "a370c58847035217626014ac6fce094a1420fdf0d033a68c2cf8fab77e1c6789",
+      "package": "ansi-regex"
+    },
+    {
+      "id": "npm-balanced-match-4.0.4",
+      "ecosystem": "npm",
+      "version": "4.0.4",
+      "status": "complete",
+      "archive_url": "https://registry.npmjs.org/balanced-match/-/balanced-match-4.0.4.tgz",
+      "archive_sha256": "9025508d9125eee531bbc49ce3ae560183975ad595f058c378bd56af4152fb16",
+      "package": "balanced-match"
+    },
+    {
+      "id": "npm-glob-parent-6.0.2",
+      "ecosystem": "npm",
+      "version": "6.0.2",
+      "status": "complete",
+      "archive_url": "https://registry.npmjs.org/glob-parent/-/glob-parent-6.0.2.tgz",
+      "archive_sha256": "345bb942f3be1fe234cab09ddc1df2c443cb2e84aaf5743c1862cf2b4e8d5066",
+      "package": "glob-parent"
+    },
+    {
+      "id": "npm-chalk-6.0.0",
+      "ecosystem": "npm",
+      "version": "6.0.0",
+      "status": "complete",
+      "archive_url": "https://registry.npmjs.org/chalk/-/chalk-6.0.0.tgz",
+      "archive_sha256": "85d0ce26b8a6098d3826d9ec17cf16c7a9326dfce3f2545ecc1133581c981399",
+      "package": "chalk"
+    },
+    {
+      "id": "npm-shebang-command-2.0.0",
+      "ecosystem": "npm",
+      "version": "2.0.0",
+      "status": "complete",
+      "archive_url": "https://registry.npmjs.org/shebang-command/-/shebang-command-2.0.0.tgz",
+      "archive_sha256": "9acba5bd18a51e9cdf5898380e4df63f803e1844def64ae1a46f88cff86d556e",
+      "package": "shebang-command"
+    },
+    {
+      "id": "npm-hasown-2.0.4",
+      "ecosystem": "npm",
+      "version": "2.0.4",
+      "status": "complete",
+      "archive_url": "https://registry.npmjs.org/hasown/-/hasown-2.0.4.tgz",
+      "archive_sha256": "e9d2b03f95573600e1c13124ce618e3142ed2c538d164595bedcd4408b8a4e4c",
+      "package": "hasown"
+    },
+    {
+      "id": "npm-entities-8.0.0",
+      "ecosystem": "npm",
+      "version": "8.0.0",
+      "status": "complete",
+      "archive_url": "https://registry.npmjs.org/entities/-/entities-8.0.0.tgz",
+      "archive_sha256": "8e8b16388e19c12fc80f9f75f518a0f83d99428be6765a38f04c264a078cc25b",
+      "package": "entities"
+    },
+    {
+      "id": "npm-punycode-2.3.1",
+      "ecosystem": "npm",
+      "version": "2.3.1",
+      "status": "complete",
+      "archive_url": "https://registry.npmjs.org/punycode/-/punycode-2.3.1.tgz",
+      "archive_sha256": "e4ce59f9fbac44349abab87279ab658f6b4614916bec5e088ae3be9323e193bb",
+      "package": "punycode"
+    },
+    {
+      "id": "npm-which-7.0.0",
+      "ecosystem": "npm",
+      "version": "7.0.0",
+      "status": "complete",
+      "archive_url": "https://registry.npmjs.org/which/-/which-7.0.0.tgz",
+      "archive_sha256": "a47e80e57446c37c6b81cb01dad85d46f0b7d456abfaedfa2a863ff3c06c2468",
+      "package": "which"
+    },
+    {
+      "id": "pypi-httpx-0.28.1",
+      "ecosystem": "pypi",
+      "version": "0.28.1",
+      "status": "complete",
+      "archive_url": "https://files.pythonhosted.org/packages/b1/df/48c586a5fe32a0f01324ee087459e112ebb7224f646c0b5023f5e79e9956/httpx-0.28.1.tar.gz",
+      "archive_sha256": "75e98c5f16b0f35b567856f597f06ff2270a374470a5c2392242528e3e3e42fc",
+      "package": "httpx"
+    },
+    {
+      "id": "pypi-click-8.5.0",
+      "ecosystem": "pypi",
+      "version": "8.5.0",
+      "status": "complete",
+      "archive_url": "https://files.pythonhosted.org/packages/c7/0e/7fa0ef50764b67090eca4114772a2abf8b6148198475e54c660b97caeee6/click-8.5.0.tar.gz",
+      "archive_sha256": "ba0d2089de75ea0310e2dde03160e6ca10009947fb95a182f9b54021bb272e34",
+      "package": "click"
+    },
+    {
+      "id": "pypi-idna-3.19",
+      "ecosystem": "pypi",
+      "version": "3.19",
+      "status": "complete",
+      "archive_url": "https://files.pythonhosted.org/packages/5f/f7/abb373e5757eaec4b922b92f97ec8d6d7e057cf06778247604fbc4e7c3f3/idna-3.19.tar.gz",
+      "archive_sha256": "5e0811a4383b21dc5838069f801c4fb62113b7447663d2530d2bd6e77b49bf15",
+      "package": "idna"
+    },
+    {
+      "id": "pypi-multidict-6.7.1",
+      "ecosystem": "pypi",
+      "version": "6.7.1",
+      "status": "complete",
+      "archive_url": "https://files.pythonhosted.org/packages/1a/c2/c2d94cbe6ac1753f3fc980da97b3d930efe1da3af3c9f5125354436c073d/multidict-6.7.1.tar.gz",
+      "archive_sha256": "ec6652a1bee61c53a3e5776b6049172c53b6aaba34f18c9ad04f82712bac623d",
+      "package": "multidict"
+    },
+    {
+      "id": "pypi-googleapis-common-protos-1.75.3",
+      "ecosystem": "pypi",
+      "version": "1.75.3",
+      "status": "complete",
+      "archive_url": "https://files.pythonhosted.org/packages/8a/c5/4353a188e2c335aee33269e8b654af228278cca8e5f0b4b5f11e5d0e9adb/googleapis_common_protos-1.75.3.tar.gz",
+      "archive_sha256": "57c435ac2c68b108999b6db075d9053e4d7a936ba57b4a3d45667b1346f1738a",
+      "package": "googleapis-common-protos"
+    },
+    {
+      "id": "pypi-mdurl-0.1.2",
+      "ecosystem": "pypi",
+      "version": "0.1.2",
+      "status": "complete",
+      "archive_url": "https://files.pythonhosted.org/packages/d6/54/cfe61301667036ec958cb99bd3efefba235e65cdeb9c84d24a8293ba1d90/mdurl-0.1.2.tar.gz",
+      "archive_sha256": "bb413d29f5eea38f31dd4754dd7377d4465116fb207585f97bf925588687c1ba",
+      "package": "mdurl"
+    },
+    {
+      "id": "pypi-opentelemetry-semantic-conventions-0.65b0",
+      "ecosystem": "pypi",
+      "version": "0.65b0",
+      "status": "complete",
+      "archive_url": "https://files.pythonhosted.org/packages/8f/73/0cbdebcb4cf545fdd328da14f5137e37d0770c3f26185e478b0d15d94f50/opentelemetry_semantic_conventions-0.65b0.tar.gz",
+      "archive_sha256": "f9b2b81e9d5b64f11bc952075e7e9c7fb0aab075c7fd1c46d597f1b919852d60",
+      "package": "opentelemetry-semantic-conventions"
+    },
+    {
+      "id": "pypi-wheel-0.48.0",
+      "ecosystem": "pypi",
+      "version": "0.48.0",
+      "status": "complete",
+      "archive_url": "https://files.pythonhosted.org/packages/d0/20/50ed6bdf27dec98b568a8ae25dc599f35baa3d9709f9e83fd1edb56b9a90/wheel-0.48.0.tar.gz",
+      "archive_sha256": "94800765601e9171bf5d58d066e640662842bcedcbab982b2c90787a2c987322",
+      "package": "wheel"
+    },
+    {
+      "id": "pypi-jsonschema-4.26.0",
+      "ecosystem": "pypi",
+      "version": "4.26.0",
+      "status": "complete",
+      "archive_url": "https://files.pythonhosted.org/packages/b3/fc/e067678238fa451312d4c62bf6e6cf5ec56375422aee02f9cb5f909b3047/jsonschema-4.26.0.tar.gz",
+      "archive_sha256": "0c26707e2efad8aa1bfc5b7ce170f3fccc2e4918ff85989ba9ffa9facb2be326",
+      "package": "jsonschema"
+    },
+    {
+      "id": "pypi-pandas-3.0.5",
+      "ecosystem": "pypi",
+      "version": "3.0.5",
+      "status": "complete",
+      "archive_url": "https://files.pythonhosted.org/packages/be/4f/5f3422a2afec5ffc46308b79e53291365a93748b498ac2e58bead0197916/pandas-3.0.5.tar.gz",
+      "archive_sha256": "dca3734d6ab7c906e6730f0788b0a1dbb9f2467731f9711f77995c8e9d62d712",
+      "package": "pandas"
+    },
+    {
+      "id": "pypi-pytest-9.1.1",
+      "ecosystem": "pypi",
+      "version": "9.1.1",
+      "status": "complete",
+      "archive_url": "https://files.pythonhosted.org/packages/e4/47/b9efed96c114afcfa3c9d3fe98a76a1d14c74a9e266d397cf6eb64be5e01/pytest-9.1.1.tar.gz",
+      "archive_sha256": "1088fbde8f2b49d95a549a195707afa7a76a3ce9bcadc26b6d71f0ffda5fe313",
+      "package": "pytest"
+    },
+    {
+      "id": "pypi-pyasn1-modules-0.4.2",
+      "ecosystem": "pypi",
+      "version": "0.4.2",
+      "status": "complete",
+      "archive_url": "https://files.pythonhosted.org/packages/e9/e6/78ebbb10a8c8e4b61a59249394a4a594c1a7af95593dc933a349c8d00964/pyasn1_modules-0.4.2.tar.gz",
+      "archive_sha256": "677091de870a80aae844b1ca6134f54652fa2c8c5a52aa396440ac3106e941e6",
+      "package": "pyasn1-modules"
+    },
+    {
+      "id": "pypi-aiobotocore-3.9.0",
+      "ecosystem": "pypi",
+      "version": "3.9.0",
+      "status": "complete",
+      "archive_url": "https://files.pythonhosted.org/packages/73/c0/18abcb7e4e504a68714c280853fd180afe376a4a55e5511fb04ba76702e4/aiobotocore-3.9.0.tar.gz",
+      "archive_sha256": "5d344e97c518b010bea167c7f7ba4f9e785f9d2b8ac7af4fd00846c62f2c0a10",
+      "package": "aiobotocore"
+    },
+    {
+      "id": "pypi-yarl-1.24.5",
+      "ecosystem": "pypi",
+      "version": "1.24.5",
+      "status": "complete",
+      "archive_url": "https://files.pythonhosted.org/packages/31/33/ebe9e3d1f86c7a0b51094c0a146392045ca1631d2664889539dec8088a33/yarl-1.24.5.tar.gz",
+      "archive_sha256": "e81b83143bee16329c23db3c1b2d82b29892fcbcb849186d2f6e98a5abe9a57f",
+      "package": "yarl"
+    },
+    {
+      "id": "pypi-numpy-2.5.2",
+      "ecosystem": "pypi",
+      "version": "2.5.2",
+      "status": "complete_with_scan_errors",
+      "archive_url": "https://files.pythonhosted.org/packages/9a/80/db0b4559e57ec36362bedbb05530a87fafbcb6067708c946967a41d449e7/numpy-2.5.2.tar.gz",
+      "archive_sha256": "d482d171c406ae88c5b19cad3b6a1c4c5209f886ab74bc44c2c865c23f52d860",
+      "package": "numpy"
+    },
+    {
+      "id": "pypi-uvicorn-0.52.4",
+      "ecosystem": "pypi",
+      "version": "0.52.4",
+      "status": "complete",
+      "archive_url": "https://files.pythonhosted.org/packages/f2/0f/3f86e61397dd33bf2ccf28188c40db6a740658aeebbbf6e7dbc101a1f487/uvicorn-0.52.4.tar.gz",
+      "archive_sha256": "73acfee47a0b133c5de13d219492d62d8a31e935f4fe6e41a232451a15379f86",
+      "package": "uvicorn"
+    },
+    {
+      "id": "pypi-pip-26.2.1",
+      "ecosystem": "pypi",
+      "version": "26.2.1",
+      "status": "complete",
+      "archive_url": "https://files.pythonhosted.org/packages/ae/15/4500e320e6b101ec3b719ae85b697d9940b6cda672bc555bd6016fc60c6f/pip-26.2.1.tar.gz",
+      "archive_sha256": "f6ad667e89a1fe78046c8f13232b247200f5258d7828f3f7883d660878e0813f",
+      "package": "pip"
+    },
+    {
+      "id": "pypi-aiosignal-1.4.0",
+      "ecosystem": "pypi",
+      "version": "1.4.0",
+      "status": "complete",
+      "archive_url": "https://files.pythonhosted.org/packages/61/62/06741b579156360248d1ec624842ad0edf697050bbaf7c3e46394e106ad1/aiosignal-1.4.0.tar.gz",
+      "archive_sha256": "f47eecd9468083c2029cc99945502cb7708b082c232f9aca65da147157b251c7",
+      "package": "aiosignal"
+    },
+    {
+      "id": "pypi-pydantic-settings-2.15.0",
+      "ecosystem": "pypi",
+      "version": "2.15.0",
+      "status": "complete",
+      "archive_url": "https://files.pythonhosted.org/packages/68/ca/31c57507b13119d7d3cfa1576dad2911a4861e3be07b579395f4e9d393f9/pydantic_settings-2.15.0.tar.gz",
+      "archive_sha256": "694b793e84f766ba76a90ebdefc01d0a9a045dab0382bee70393da93712ad117",
+      "package": "pydantic-settings"
+    },
+    {
+      "id": "pypi-httpcore-1.0.9",
+      "ecosystem": "pypi",
+      "version": "1.0.9",
+      "status": "complete",
+      "archive_url": "https://files.pythonhosted.org/packages/06/94/82699a10bca87a5556c9c59b5963f2d039dbd239f25bc2a63907a05a14cb/httpcore-1.0.9.tar.gz",
+      "archive_sha256": "6e34463af53fd2ab5d807f399a9b45ea31c3dfa2276f15a2c3f00afff6e176e8",
+      "package": "httpcore"
+    },
+    {
+      "id": "rubygems-railties-8.1.3",
+      "ecosystem": "rubygems",
+      "version": "8.1.3",
+      "status": "complete",
+      "archive_url": "https://rubygems.org/downloads/railties-8.1.3.gem",
+      "archive_sha256": "913eb0e0cb520aac687ffd74916bd726d48fa21f47833c6292576ef6a286de22",
+      "package": "railties"
+    },
+    {
+      "id": "rubygems-public_suffix-7.0.5",
+      "ecosystem": "rubygems",
+      "version": "7.0.5",
+      "status": "complete",
+      "archive_url": "https://rubygems.org/downloads/public_suffix-7.0.5.gem",
+      "archive_sha256": "1a8bb08f1bbea19228d3bed6e5ed908d1cb4f7c2726d18bd9cadf60bc676f623",
+      "package": "public_suffix"
+    },
+    {
+      "id": "rubygems-rspec-support-3.13.7",
+      "ecosystem": "rubygems",
+      "version": "3.13.7",
+      "status": "complete",
+      "archive_url": "https://rubygems.org/downloads/rspec-support-3.13.7.gem",
+      "archive_sha256": "0640e5570872aafefd79867901deeeeb40b0c9875a36b983d85f54fb7381c47c",
+      "package": "rspec-support"
+    },
+    {
+      "id": "rubygems-sprockets-rails-3.5.2",
+      "ecosystem": "rubygems",
+      "version": "3.5.2",
+      "status": "complete",
+      "archive_url": "https://rubygems.org/downloads/sprockets-rails-3.5.2.gem",
+      "archive_sha256": "a9e88e6ce9f8c912d349aa5401509165ec42326baf9e942a85de4b76dbc4119e",
+      "package": "sprockets-rails"
+    },
+    {
+      "id": "rubygems-multipart-post-2.4.1",
+      "ecosystem": "rubygems",
+      "version": "2.4.1",
+      "status": "complete",
+      "archive_url": "https://rubygems.org/downloads/multipart-post-2.4.1.gem",
+      "archive_sha256": "9872d03a8e552020ca096adadbf5e3cb1cd1cdd6acd3c161136b8a5737cdb4a8",
+      "package": "multipart-post"
+    },
+    {
+      "id": "rubygems-builder-3.3.0",
+      "ecosystem": "rubygems",
+      "version": "3.3.0",
+      "status": "complete",
+      "archive_url": "https://rubygems.org/downloads/builder-3.3.0.gem",
+      "archive_sha256": "497918d2f9dca528fdca4b88d84e4ef4387256d984b8154e9d5d3fe5a9c8835f",
+      "package": "builder"
+    },
+    {
+      "id": "rubygems-multi_json-1.21.1",
+      "ecosystem": "rubygems",
+      "version": "1.21.1",
+      "status": "complete",
+      "archive_url": "https://rubygems.org/gems/multi_json-1.21.1-java.gem",
+      "archive_sha256": "45d4895647d645a64bea1fa510b50e645af1f94ec6738497127de38d40f6d968",
+      "package": "multi_json"
+    },
+    {
+      "id": "rubygems-parallel-2.1.0",
+      "ecosystem": "rubygems",
+      "version": "2.1.0",
+      "status": "complete",
+      "archive_url": "https://rubygems.org/gems/parallel-2.1.0.gem",
+      "archive_sha256": "b35258865c2e31134c5ecb708beaaf6772adf9d5efae28e93e99260877b09356",
+      "package": "parallel"
+    },
+    {
+      "id": "rubygems-unf_ext-0.0.9",
+      "ecosystem": "rubygems",
+      "version": "0.0.9",
+      "status": "complete",
+      "archive_url": "https://rubygems.org/gems/unf_ext-0.0.9-x86-mingw32.gem",
+      "archive_sha256": "d48bd2dd8d1d9f25329d57cac049d2ed87eaa87ed9d64e5c41bce4e54e71c002",
+      "package": "unf_ext"
+    },
+    {
+      "id": "rubygems-minitest-6.0.6",
+      "ecosystem": "rubygems",
+      "version": "6.0.6",
+      "status": "complete",
+      "archive_url": "https://rubygems.org/gems/minitest-6.0.6.gem",
+      "archive_sha256": "153ea36d1d987a62942382b61075745042a2b3123b1cd48f4c3675af9cc7d6f1",
+      "package": "minitest"
+    },
+    {
+      "id": "rubygems-ffi-1.17.4",
+      "ecosystem": "rubygems",
+      "version": "1.17.4",
+      "status": "complete",
+      "archive_url": "https://rubygems.org/gems/ffi-1.17.4.gem",
+      "archive_sha256": "bcd1642e06f0d16fc9e09ac6d49c3a7298b9789bcb58127302f934e437d60acf",
+      "package": "ffi"
+    },
+    {
+      "id": "rubygems-nokogiri-1.19.4",
+      "ecosystem": "rubygems",
+      "version": "1.19.4",
+      "status": "complete",
+      "archive_url": "https://rubygems.org/gems/nokogiri-1.19.4.gem",
+      "archive_sha256": "50c951611c92bca05c51411aef45f1cbc50f2821c4802758c5c6d34696533ab5",
+      "package": "nokogiri"
+    },
+    {
+      "id": "rubygems-actionview-8.1.3",
+      "ecosystem": "rubygems",
+      "version": "8.1.3",
+      "status": "complete",
+      "archive_url": "https://rubygems.org/gems/actionview-8.1.3.gem",
+      "archive_sha256": "1347c88c7f3edb38100c5ce0e9fb5e62d7755f3edc1b61cce2eb0b2c6ea2fd5d",
+      "package": "actionview"
+    },
+    {
+      "id": "rubygems-aws-partitions-1.1283.0",
+      "ecosystem": "rubygems",
+      "version": "1.1283.0",
+      "status": "complete",
+      "archive_url": "https://rubygems.org/gems/aws-partitions-1.1283.0.gem",
+      "archive_sha256": "125ba9cb65eb7ec2b0a2041a47d204d403b3f6d9aa62bffa53a6b95b04b1f1de",
+      "package": "aws-partitions"
+    },
+    {
+      "id": "rubygems-faraday-net_http-3.4.4",
+      "ecosystem": "rubygems",
+      "version": "3.4.4",
+      "status": "complete",
+      "archive_url": "https://rubygems.org/gems/faraday-net_http-3.4.4.gem",
+      "archive_sha256": "0e78af151747ed1b00f33e25973b4bc220d7f16c00c39676817c8b12331eb588",
+      "package": "faraday-net_http"
+    },
+    {
+      "id": "rubygems-dotenv-3.2.0",
+      "ecosystem": "rubygems",
+      "version": "3.2.0",
+      "status": "complete",
+      "archive_url": "https://rubygems.org/gems/dotenv-3.2.0.gem",
+      "archive_sha256": "e375b83121ea7ca4ce20f214740076129ab8514cd81378161f11c03853fe619d",
+      "package": "dotenv"
+    },
+    {
+      "id": "rubygems-mail-2.9.1",
+      "ecosystem": "rubygems",
+      "version": "2.9.1",
+      "status": "complete",
+      "archive_url": "https://rubygems.org/gems/mail-2.9.1.gem",
+      "archive_sha256": "06574eca475253d6c18145dd70af80d0eb970182d55053497c5f4d797ea160e8",
+      "package": "mail"
+    },
+    {
+      "id": "rubygems-ast-2.4.3",
+      "ecosystem": "rubygems",
+      "version": "2.4.3",
+      "status": "complete",
+      "archive_url": "https://rubygems.org/gems/ast-2.4.3.gem",
+      "archive_sha256": "954615157c1d6a382bc27d690d973195e79db7f55e9765ac7c481c60bdb4d383",
+      "package": "ast"
+    },
+    {
+      "id": "rubygems-parser-2.2.0",
+      "ecosystem": "rubygems",
+      "version": "2.2.0",
+      "status": "complete",
+      "archive_url": "https://rubygems.org/gems/parser-2.2.0.gem",
+      "archive_sha256": "288d88608ed359048a5d91b81d2ea55c8dbe5c40f26827ae939f9f9b6416c627",
+      "package": "parser"
+    },
+    {
+      "id": "rubygems-mini_portile2-2.8.9",
+      "ecosystem": "rubygems",
+      "version": "2.8.9",
+      "status": "complete",
+      "archive_url": "https://rubygems.org/gems/mini_portile2-2.8.9.gem",
+      "archive_sha256": "0cd7c7f824e010c072e33f68bc02d85a00aeb6fce05bb4819c03dfd3c140c289",
+      "package": "mini_portile2"
+    },
+    {
+      "id": "cargo-toml_edit-0.25.13%2Bspec-1.1.0",
+      "ecosystem": "cargo",
+      "version": "0.25.13+spec-1.1.0",
+      "status": "complete",
+      "archive_url": "https://static.crates.io/crates/toml_edit/toml_edit-0.25.13%2Bspec-1.1.0.crate",
+      "archive_sha256": "6975367e4d2ef766d86af01ffad14b622fecc8d4357a998fbc4deb6e9bacaf9b",
+      "package": "toml_edit"
+    },
+    {
+      "id": "cargo-quote-1.0.47",
+      "ecosystem": "cargo",
+      "version": "1.0.47",
+      "status": "complete",
+      "archive_url": "https://static.crates.io/crates/quote/quote-1.0.47.crate",
+      "archive_sha256": "1fbf4db142a473a8d80c26bbf18454ed458bf8d26c8219c331daecfdbd079001",
+      "package": "quote"
+    },
+    {
+      "id": "cargo-itertools-0.15.0",
+      "ecosystem": "cargo",
+      "version": "0.15.0",
+      "status": "complete",
+      "archive_url": "https://static.crates.io/crates/itertools/itertools-0.15.0.crate",
+      "archive_sha256": "8b4baf93f58d4425749ca49a51c50ebab072c5df6994d08fed93541c331481dc",
+      "package": "itertools"
+    },
+    {
+      "id": "cargo-parking_lot-0.12.5",
+      "ecosystem": "cargo",
+      "version": "0.12.5",
+      "status": "complete",
+      "archive_url": "https://static.crates.io/crates/parking_lot/parking_lot-0.12.5.crate",
+      "archive_sha256": "93857453250e3077bd71ff98b6a65ea6621a19bb0f559a85248955ac12c45a1a",
+      "package": "parking_lot"
+    },
+    {
+      "id": "cargo-futures-task-0.3.34",
+      "ecosystem": "cargo",
+      "version": "0.3.34",
+      "status": "complete",
+      "archive_url": "https://static.crates.io/crates/futures-task/futures-task-0.3.34.crate",
+      "archive_sha256": "cd417de3d1d015fc3bfd2b1ea46dfc7bab72ef86f1cc7cc9c78e728b34a6d1fd",
+      "package": "futures-task"
+    },
+    {
+      "id": "cargo-pin-project-lite-0.2.17",
+      "ecosystem": "cargo",
+      "version": "0.2.17",
+      "status": "complete",
+      "archive_url": "https://static.crates.io/crates/pin-project-lite/pin-project-lite-0.2.17.crate",
+      "archive_sha256": "a89322df9ebe1c1578d689c92318e070967d1042b512afbe49518723f4e6d5cd",
+      "package": "pin-project-lite"
+    },
+    {
+      "id": "cargo-ppv-lite86-0.2.21",
+      "ecosystem": "cargo",
+      "version": "0.2.21",
+      "status": "complete",
+      "archive_url": "https://static.crates.io/crates/ppv-lite86/ppv-lite86-0.2.21.crate",
+      "archive_sha256": "85eae3c4ed2f50dcfe72643da4befc30deadb458a9b590d720cde2f2b1e97da9",
+      "package": "ppv-lite86"
+    },
+    {
+      "id": "cargo-windows-targets-0.53.5",
+      "ecosystem": "cargo",
+      "version": "0.53.5",
+      "status": "complete",
+      "archive_url": "https://static.crates.io/crates/windows-targets/windows-targets-0.53.5.crate",
+      "archive_sha256": "4945f9f551b88e0d65f3db0bc25c33b8acea4d9e41163edf90dcd0b19f9069f3",
+      "package": "windows-targets"
+    },
+    {
+      "id": "cargo-ryu-1.0.23",
+      "ecosystem": "cargo",
+      "version": "1.0.23",
+      "status": "complete",
+      "archive_url": "https://static.crates.io/crates/ryu/ryu-1.0.23.crate",
+      "archive_sha256": "9774ba4a74de5f7b1c1451ed6cd5285a32eddb5cccb8cc655a4e50009e06477f",
+      "package": "ryu"
+    },
+    {
+      "id": "cargo-h2-0.4.19",
+      "ecosystem": "cargo",
+      "version": "0.4.19",
+      "status": "complete",
+      "archive_url": "https://static.crates.io/crates/h2/h2-0.4.19.crate",
+      "archive_sha256": "ef8e5e5a340588f4452631496976cf8636d4a7ecf600239fdc27615d2530bc16",
+      "package": "h2"
+    },
+    {
+      "id": "cargo-lazy_static-1.5.0",
+      "ecosystem": "cargo",
+      "version": "1.5.0",
+      "status": "complete",
+      "archive_url": "https://static.crates.io/crates/lazy_static/lazy_static-1.5.0.crate",
+      "archive_sha256": "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe",
+      "package": "lazy_static"
+    },
+    {
+      "id": "cargo-windows_x86_64_gnu-0.53.1",
+      "ecosystem": "cargo",
+      "version": "0.53.1",
+      "status": "complete",
+      "archive_url": "https://static.crates.io/crates/windows_x86_64_gnu/windows_x86_64_gnu-0.53.1.crate",
+      "archive_sha256": "9c3842cdd74a865a8066ab39c8a7a473c0778a3f29370b5fd6b4b9aa7df4a499",
+      "package": "windows_x86_64_gnu"
+    },
+    {
+      "id": "cargo-cc-1.4.5",
+      "ecosystem": "cargo",
+      "version": "1.4.5",
+      "status": "complete",
+      "archive_url": "https://static.crates.io/crates/cc/cc-1.4.5.crate",
+      "archive_sha256": "005ec2760ca554fae18df7a11195552ec576cd665632a881bc011d5bb2fd4d80",
+      "package": "cc"
+    },
+    {
+      "id": "cargo-windows_aarch64_msvc-0.53.1",
+      "ecosystem": "cargo",
+      "version": "0.53.1",
+      "status": "complete",
+      "archive_url": "https://static.crates.io/crates/windows_aarch64_msvc/windows_aarch64_msvc-0.53.1.crate",
+      "archive_sha256": "b9d782e804c2f632e395708e99a94275910eb9100b2114651e04744e9b125006",
+      "package": "windows_aarch64_msvc"
+    },
+    {
+      "id": "cargo-miniz_oxide-0.9.1",
+      "ecosystem": "cargo",
+      "version": "0.9.1",
+      "status": "complete",
+      "archive_url": "https://static.crates.io/crates/miniz_oxide/miniz_oxide-0.9.1.crate",
+      "archive_sha256": "b63fbc4a50860e98e7b2aa7804ded1db5cbc3aff9193adaff57a6931bf7c4b4c",
+      "package": "miniz_oxide"
+    },
+    {
+      "id": "cargo-crossbeam-utils-0.8.22",
+      "ecosystem": "cargo",
+      "version": "0.8.22",
+      "status": "complete",
+      "archive_url": "https://static.crates.io/crates/crossbeam-utils/crossbeam-utils-0.8.22.crate",
+      "archive_sha256": "61803da095bee82a81bb1a452ecc25d3b2f1416d1897eb86430c6159ef717c17",
+      "package": "crossbeam-utils"
+    },
+    {
+      "id": "cargo-either-1.18.0",
+      "ecosystem": "cargo",
+      "version": "1.18.0",
+      "status": "complete",
+      "archive_url": "https://static.crates.io/crates/either/either-1.18.0.crate",
+      "archive_sha256": "252afb9ae5eaa683babdc6a068b3f5726eb19e05070c731f9b2a23a7c3e8ed34",
+      "package": "either"
+    },
+    {
+      "id": "cargo-http-1.5.0",
+      "ecosystem": "cargo",
+      "version": "1.5.0",
+      "status": "complete",
+      "archive_url": "https://static.crates.io/crates/http/http-1.5.0.crate",
+      "archive_sha256": "918d3568bebf352712bc2ef3d46a8bcf1a75b373be6539de198e9105cbbf9ce0",
+      "package": "http"
+    },
+    {
+      "id": "cargo-block-buffer-0.12.1",
+      "ecosystem": "cargo",
+      "version": "0.12.1",
+      "status": "complete",
+      "archive_url": "https://static.crates.io/crates/block-buffer/block-buffer-0.12.1.crate",
+      "archive_sha256": "d2f6c7dbe95a6ed67ad9f18e57daf93a2f034c524b99fd2b76d18fdfeb6660aa",
+      "package": "block-buffer"
+    },
+    {
+      "id": "cargo-futures-channel-0.3.34",
+      "ecosystem": "cargo",
+      "version": "0.3.34",
+      "status": "complete",
+      "archive_url": "https://static.crates.io/crates/futures-channel/futures-channel-0.3.34.crate",
+      "archive_sha256": "b1f9e3d69d39e4862ffed03ed071a76f9a13ba1d9109d355b0f0aa6b15e393c4",
+      "package": "futures-channel"
+    },
+    {
+      "id": "maven-org.scala-js%3Ascalajs-library_2.12-1.22.0",
+      "ecosystem": "maven",
+      "version": "1.22.0",
+      "status": "complete",
+      "archive_url": "https://repo.maven.apache.org/maven2/org/scala-js/scalajs-library_2.12/1.22.0/scalajs-library_2.12-1.22.0.jar",
+      "archive_sha256": "3fe7afefabf16eff196149aed2545212316595b7e39eccdc6fd6263e05a6e696",
+      "package": "org.scala-js:scalajs-library_2.12"
+    },
+    {
+      "id": "maven-org.apache.maven.plugin-tools%3Amaven-plugin-annotations-3.15.2",
+      "ecosystem": "maven",
+      "version": "3.15.2",
+      "status": "complete",
+      "archive_url": "https://repo.maven.apache.org/maven2/org/apache/maven/plugin-tools/maven-plugin-annotations/3.15.2/maven-plugin-annotations-3.15.2.jar",
+      "archive_sha256": "979d3cf8f4ac804cc27d2f8a6db07f2149d58ccd59bb3d589cc46bb9a44c0b4b",
+      "package": "org.apache.maven.plugin-tools:maven-plugin-annotations"
+    },
+    {
+      "id": "maven-org.mockito%3Amockito-core-5.23.0",
+      "ecosystem": "maven",
+      "version": "5.23.0",
+      "status": "complete",
+      "archive_url": "https://repo.maven.apache.org/maven2/org/mockito/mockito-core/5.23.0/mockito-core-5.23.0.jar",
+      "archive_sha256": "ae295bebd5d11fab97ab297815dc7617188b86003cbce3dfd5c0d5c3a6cc4a0c",
+      "package": "org.mockito:mockito-core"
+    },
+    {
+      "id": "maven-com.h2database%3Ah2-2.4.240",
+      "ecosystem": "maven",
+      "version": "2.4.240",
+      "status": "complete",
+      "archive_url": "https://repo.maven.apache.org/maven2/com/h2database/h2/2.4.240/h2-2.4.240.jar",
+      "archive_sha256": "29b70e427cc1c40cdc376283adbb0cc62853073797bb5fe5761f81fe73d57ce0",
+      "package": "com.h2database:h2"
+    },
+    {
+      "id": "maven-commons-codec%3Acommons-codec-1.22.1",
+      "ecosystem": "maven",
+      "version": "1.22.1",
+      "status": "complete",
+      "archive_url": "https://repo.maven.apache.org/maven2/commons-codec/commons-codec/1.22.1/commons-codec-1.22.1.jar",
+      "archive_sha256": "78a5d732fbd715e2d10bd7150d2f8030bae57267f8aacc5c88f642cb6c2e5d3f",
+      "package": "commons-codec:commons-codec"
+    },
+    {
+      "id": "maven-javax.servlet%3Ajavax.servlet-api-4.0.1",
+      "ecosystem": "maven",
+      "version": "4.0.1",
+      "status": "complete",
+      "archive_url": "https://repo.maven.apache.org/maven2/javax/servlet/javax.servlet-api/4.0.1/javax.servlet-api-4.0.1.jar",
+      "archive_sha256": "83a03dd877d3674576f0da7b90755c8524af099ccf0607fc61aa971535ad7c60",
+      "package": "javax.servlet:javax.servlet-api"
+    },
+    {
+      "id": "maven-org.scala-lang%3Ascala-compiler-2.13.18",
+      "ecosystem": "maven",
+      "version": "2.13.18",
+      "status": "complete",
+      "archive_url": "https://repo.maven.apache.org/maven2/org/scala-lang/scala-compiler/2.13.18/scala-compiler-2.13.18.jar",
+      "archive_sha256": "2f15891fcae7aad30a3892194fb2abb6224cf7ce5d2bd90fba7f1c48682fca21",
+      "package": "org.scala-lang:scala-compiler"
+    },
+    {
+      "id": "maven-org.jetbrains.kotlin%3Akotlin-stdlib-jdk8-2.4.10",
+      "ecosystem": "maven",
+      "version": "2.4.10",
+      "status": "complete",
+      "archive_url": "https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-stdlib-jdk8/2.4.10/kotlin-stdlib-jdk8-2.4.10.jar",
+      "archive_sha256": "08346b7f4cfba40c1139161c9f30b68199f425cecf3b63de67838063f34a05c7",
+      "package": "org.jetbrains.kotlin:kotlin-stdlib-jdk8"
+    },
+    {
+      "id": "maven-org.scala-lang%3Ascala-library-3.9.0",
+      "ecosystem": "maven",
+      "version": "3.9.0",
+      "status": "complete",
+      "archive_url": "https://repo.maven.apache.org/maven2/org/scala-lang/scala-library/3.9.0/scala-library-3.9.0.jar",
+      "archive_sha256": "b844bf6fb3080c73df6b9c523b7a69b9ef4a980bb15e5c37c35443d1d0b0e0cd",
+      "package": "org.scala-lang:scala-library"
+    },
+    {
+      "id": "maven-com.novocode%3Ajunit-interface-0.11",
+      "ecosystem": "maven",
+      "version": "0.11",
+      "status": "complete",
+      "archive_url": "https://repo.maven.apache.org/maven2/com/novocode/junit-interface/0.11/junit-interface-0.11.jar",
+      "archive_sha256": "29e923226a0d10e9142bbd81073ef52f601277001fcf9014389bf0af3dc33dc3",
+      "package": "com.novocode:junit-interface"
+    },
+    {
+      "id": "maven-org.apache.maven%3Amaven-plugin-api-3.9.16",
+      "ecosystem": "maven",
+      "version": "3.9.16",
+      "status": "complete",
+      "archive_url": "https://repo.maven.apache.org/maven2/org/apache/maven/maven-plugin-api/3.9.16/maven-plugin-api-3.9.16.jar",
+      "archive_sha256": "37cb5e483e23327cf4ba18f920b45e000d20eec0428a086a5c1bd6bbdecf088c",
+      "package": "org.apache.maven:maven-plugin-api"
+    },
+    {
+      "id": "maven-org.apache.logging.log4j%3Alog4j-core-2.26.1",
+      "ecosystem": "maven",
+      "version": "2.26.1",
+      "status": "complete",
+      "archive_url": "https://repo.maven.apache.org/maven2/org/apache/logging/log4j/log4j-core/2.26.1/log4j-core-2.26.1.jar",
+      "archive_sha256": "2ec8c3bf5a6d7c89be8620116a2fc973f7dda1ad0261ad393c4d4726edfd3dcb",
+      "package": "org.apache.logging.log4j:log4j-core"
+    },
+    {
+      "id": "maven-org.apache.httpcomponents%3Ahttpcore-4.4.16",
+      "ecosystem": "maven",
+      "version": "4.4.16",
+      "status": "complete",
+      "archive_url": "https://repo.maven.apache.org/maven2/org/apache/httpcomponents/httpcore/4.4.16/httpcore-4.4.16.jar",
+      "archive_sha256": "6c9b3dd142a09dc468e23ad39aad6f75a0f2b85125104469f026e52a474e464f",
+      "package": "org.apache.httpcomponents:httpcore"
+    },
+    {
+      "id": "maven-org.slf4j%3Ajul-to-slf4j-2.0.19",
+      "ecosystem": "maven",
+      "version": "2.0.19",
+      "status": "complete",
+      "archive_url": "https://repo.maven.apache.org/maven2/org/slf4j/jul-to-slf4j/2.0.19/jul-to-slf4j-2.0.19.jar",
+      "archive_sha256": "a5764fbd2f0053399ef75d40653c4e7c97e733b45676946b0a072416fc56ff30",
+      "package": "org.slf4j:jul-to-slf4j"
+    },
+    {
+      "id": "maven-org.slf4j%3Aslf4j-simple-2.0.19",
+      "ecosystem": "maven",
+      "version": "2.0.19",
+      "status": "complete",
+      "archive_url": "https://repo.maven.apache.org/maven2/org/slf4j/slf4j-simple/2.0.19/slf4j-simple-2.0.19.jar",
+      "archive_sha256": "1d20cbfc8f97a719112a72c6d4c2323259d179a7478d1f694b54409d412bb731",
+      "package": "org.slf4j:slf4j-simple"
+    },
+    {
+      "id": "maven-org.apache.httpcomponents%3Ahttpclient-4.5.14",
+      "ecosystem": "maven",
+      "version": "4.5.14",
+      "status": "complete",
+      "archive_url": "https://repo.maven.apache.org/maven2/org/apache/httpcomponents/httpclient/4.5.14/httpclient-4.5.14.jar",
+      "archive_sha256": "c8bc7e1c51a6d4ce72f40d2ebbabf1c4b68bfe76e732104b04381b493478e9d6",
+      "package": "org.apache.httpcomponents:httpclient"
+    },
+    {
+      "id": "maven-com.google.guava%3Aguava-16.0.1",
+      "ecosystem": "maven",
+      "version": "16.0.1",
+      "status": "complete",
+      "archive_url": "https://repo.maven.apache.org/maven2/com/google/guava/guava/16.0.1/guava-16.0.1.jar",
+      "archive_sha256": "a896857d07845d38c7dc5bbc0457b6d9b0f62ecffda010e5e9ec12d561f676d3",
+      "package": "com.google.guava:guava"
+    },
+    {
+      "id": "maven-org.springframework.boot%3Aspring-boot-starter-web-4.1.1",
+      "ecosystem": "maven",
+      "version": "4.1.1",
+      "status": "complete",
+      "archive_url": "https://repo.maven.apache.org/maven2/org/springframework/boot/spring-boot-starter-web/4.1.1/spring-boot-starter-web-4.1.1.jar",
+      "archive_sha256": "840d2ccfa8945bbbde526121f7bbbc075b98c816fec188c0c5f89b7b05be5e21",
+      "package": "org.springframework.boot:spring-boot-starter-web"
+    },
+    {
+      "id": "maven-org.apache.logging.log4j%3Alog4j-slf4j-impl-2.26.1",
+      "ecosystem": "maven",
+      "version": "2.26.1",
+      "status": "complete",
+      "archive_url": "https://repo.maven.apache.org/maven2/org/apache/logging/log4j/log4j-slf4j-impl/2.26.1/log4j-slf4j-impl-2.26.1.jar",
+      "archive_sha256": "1afc7b00db35d6bdc309b35cee01dd114b292c2d903975f2987da870b24cea6e",
+      "package": "org.apache.logging.log4j:log4j-slf4j-impl"
+    },
+    {
+      "id": "maven-org.reflections%3Areflections-0.10.2",
+      "ecosystem": "maven",
+      "version": "0.10.2",
+      "status": "complete",
+      "archive_url": "https://repo.maven.apache.org/maven2/org/reflections/reflections/0.10.2/reflections-0.10.2.jar",
+      "archive_sha256": "938a2d08fe54050d7610b944d8ddc3a09355710d9e6be0aac838dbc04e9a2825",
+      "package": "org.reflections:reflections"
+    }
+  ]
+}
