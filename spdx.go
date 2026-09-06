@@ -140,16 +140,21 @@ func (m *Matcher) matchSPDXTags(input []byte, result *Result) bool {
 		if start >= end {
 			continue
 		}
+		expression, identifiers, scanCodeIDs := m.engine.spdx.normalizeExpression(input[start:end])
+		if expression == "" {
+			continue
+		}
+		result.SPDXDeclarations = append(result.SPDXDeclarations, SPDXDeclaration{
+			Expression: expression,
+			Start:      anchor,
+			End:        end,
+		})
 		for next < len(coverage) && coverage[next].start <= start {
 			coveredEnd = max(coveredEnd, coverage[next].end)
 			next++
 		}
 		if coveredEnd >= end {
 			declarations = append(declarations, spdxDeclaration{anchor: anchor, start: start, end: end, covered: true})
-			continue
-		}
-		expression, identifiers, scanCodeIDs := m.engine.spdx.normalizeExpression(input[start:end])
-		if expression == "" {
 			continue
 		}
 		declarations = append(declarations, spdxDeclaration{anchor: anchor, start: start, end: end})

@@ -71,6 +71,17 @@ type Result struct {
 	Detections []Detection
 	Clues      []Match
 	Corpus     CorpusInfo
+	// SPDXDeclarations contains parsed SPDX-License-Identifier tag occurrences.
+	SPDXDeclarations []SPDXDeclaration
+}
+
+// SPDXDeclaration describes one parsed SPDX-License-Identifier tag.
+type SPDXDeclaration struct {
+	// Expression is normalized from the tag alone.
+	Expression string
+	// Start and End delimit the tag in input bytes, excluding End.
+	Start int
+	End   int
 }
 
 // Detection groups matches that state the same license expression.
