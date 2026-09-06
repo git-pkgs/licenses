@@ -15,7 +15,7 @@ separate copy of its 413 MB license index in each worker process.
 Scanning a checkout of [rust-lang/cargo](https://github.com/rust-lang/cargo)
 at `a07c49a` (2,950 files, 8-core M1 Pro, default flags) takes 0.65 s and
 239 MB peak RSS, against 94 s and 4.5 GB across nine processes for
-`scancode -l`. A 54-file repository takes 0.74 s against 23 s.
+`scancode -l`.
 
 `licenses` matches exact token sequences, whole-text hashes, and SPDX tag
 lines only. ScanCode also does approximate matching, so it reports detections
