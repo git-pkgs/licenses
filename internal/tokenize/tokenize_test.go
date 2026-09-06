@@ -160,11 +160,41 @@ func TestTokenizeMapsOffsetsAndUnknownWords(t *testing.T) {
 		t.Fatalf("offsets = %#v, want %#v", got.Offsets, wantOffsets)
 	}
 	ids := vocabulary.TokenizeIDs([]byte("MIT, mystery; Apache"))
-	if !slices.Equal(ids.IDs, wantIDs) || ids.Start != 0 || ids.End != 20 {
+	wantKnownIDs := []ID{mit, apache}
+	if !slices.Equal(ids.IDs, wantKnownIDs) ||
+		!slices.Equal(ids.UnknownAfter, []uint32{1}) ||
+		ids.Start != 0 || ids.End != 20 {
 		t.Fatalf("ID-only tokens = %#v", ids)
 	}
 	if offsets := TokenOffsets([]byte("MIT, mystery; Apache"), len(wantIDs)); !slices.Equal(offsets, wantOffsets) {
 		t.Fatalf("token offsets = %#v, want %#v", offsets, wantOffsets)
+	}
+	wantKnownOffsets := []Offset{{0, 3}, {14, 20}}
+	offsets := KnownTokenOffsetsAppend(
+		[]byte("MIT, mystery; Apache"),
+		ids.UnknownAfter,
+		nil,
+	)
+	if !slices.Equal(offsets, wantKnownOffsets) {
+		t.Fatalf("known token offsets = %#v, want %#v", offsets, wantKnownOffsets)
+	}
+	spanning := vocabulary.TokenizeIDs([]byte("before MIT one two Apache after"))
+	if !slices.Equal(spanning.IDs, wantKnownIDs) ||
+		!slices.Equal(spanning.UnknownAfter, []uint32{0, 1, 1, 2}) {
+		t.Fatalf("spanning tokens = %#v", spanning)
+	}
+	spanningOffsets := KnownTokenOffsetsAppend(
+		[]byte("before MIT one two Apache after"),
+		spanning.UnknownAfter,
+		nil,
+	)
+	if !slices.Equal(spanningOffsets, []Offset{{7, 10}, {19, 25}}) {
+		t.Fatalf("spanning offsets = %#v", spanningOffsets)
+	}
+	unknown := vocabulary.TokenizeIDs([]byte("mystery"))
+	if len(unknown.IDs) != 0 || !slices.Equal(unknown.UnknownAfter, []uint32{0}) ||
+		unknown.Start != 0 || unknown.End != 0 {
+		t.Fatalf("unknown-only tokens = %#v", unknown)
 	}
 }
 
@@ -175,17 +205,22 @@ func TestTokenizeAppendReusesAndTruncatesBuffers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	long := []byte("MIT Apache MIT Apache MIT")
+	long := []byte("MIT mystery Apache MIT Apache MIT")
 	short := []byte("Apache")
 	apache, _ := vocabulary.Lookup("apache")
 
 	ids := make([]ID, 0, 8)
 	var word []byte
-	first := vocabulary.TokenizeIDsAppend(long, ids, &word)
+	unknownAfter := make([]uint32, 0, 8)
+	first := vocabulary.TokenizeIDsAppend(long, ids, unknownAfter, &word)
 	if len(first.IDs) != 5 || &first.IDs[0] != &ids[:1][0] {
 		t.Fatalf("first append: len=%d, backing not reused", len(first.IDs))
 	}
-	second := vocabulary.TokenizeIDsAppend(short, first.IDs, &word)
+	if !slices.Equal(first.UnknownAfter, []uint32{1}) ||
+		&first.UnknownAfter[0] != &unknownAfter[:1][0] {
+		t.Fatalf("first unknown positions = %#v, backing not reused", first.UnknownAfter)
+	}
+	second := vocabulary.TokenizeIDsAppend(short, first.IDs, first.UnknownAfter, &word)
 	if !slices.Equal(second.IDs, []ID{apache}) {
 		t.Fatalf("second IDs = %#v, want [%d]", second.IDs, apache)
 	}
@@ -195,14 +230,17 @@ func TestTokenizeAppendReusesAndTruncatesBuffers(t *testing.T) {
 	if cap(second.IDs) != 8 {
 		t.Fatalf("second cap = %d, want 8", cap(second.IDs))
 	}
-	empty := vocabulary.TokenizeIDsAppend(nil, second.IDs, nil)
+	if len(second.UnknownAfter) != 0 || cap(second.UnknownAfter) != 8 {
+		t.Fatalf("second unknown positions = %#v cap=%d", second.UnknownAfter, cap(second.UnknownAfter))
+	}
+	empty := vocabulary.TokenizeIDsAppend(nil, second.IDs, second.UnknownAfter, nil)
 	if len(empty.IDs) != 0 || empty.Start != 0 || empty.End != 0 {
 		t.Fatalf("empty append = %#v", empty)
 	}
 
 	offsets := make([]Offset, 0, 8)
 	firstOffsets := TokenOffsetsAppend(long, offsets)
-	if len(firstOffsets) != 5 || &firstOffsets[0] != &offsets[:1][0] {
+	if len(firstOffsets) != 6 || &firstOffsets[0] != &offsets[:1][0] {
 		t.Fatalf("first offset append: len=%d, backing not reused", len(firstOffsets))
 	}
 	secondOffsets := TokenOffsetsAppend(short, firstOffsets)

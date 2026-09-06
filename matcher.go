@@ -271,9 +271,10 @@ func newMatchEngine(index corpus.Index) (*matchEngine, error) {
 
 // matchScratch holds per-call buffers reused across Match invocations.
 type matchScratch struct {
-	ids     []tokenize.ID
-	offsets []tokenize.Offset
-	word    []byte
+	ids          []tokenize.ID
+	offsets      []tokenize.Offset
+	unknownAfter []uint32
+	word         []byte
 }
 
 // Oversized calls keep their buffers separate from the bounded pooled reserve.
@@ -298,6 +299,7 @@ func putMatchScratch(s *matchScratch, previous matchScratch) {
 func (s *matchScratch) retain(previous matchScratch) {
 	s.ids = retainBuffer(s.ids, previous.ids, matchScratchTokenCap)
 	s.offsets = retainBuffer(s.offsets, previous.offsets, matchScratchTokenCap)
+	s.unknownAfter = retainBuffer(s.unknownAfter, previous.unknownAfter, matchScratchTokenCap)
 	s.word = retainBuffer(s.word, previous.word, matchScratchWordCap)
 }
 
@@ -332,24 +334,50 @@ func (m *Matcher) match(ctx context.Context, b []byte, filters exactFilterOption
 	scratch := getMatchScratch()
 	defer putMatchScratch(scratch, *scratch)
 
-	tokens := m.engine.vocabulary.TokenizeIDsAppend(b, scratch.ids, &scratch.word)
+	tokens := m.engine.vocabulary.TokenizeIDsAppend(
+		b,
+		scratch.ids,
+		scratch.unknownAfter,
+		&scratch.word,
+	)
 	scratch.ids = tokens.IDs
+	scratch.unknownAfter = tokens.UnknownAfter
 	result := Result{Corpus: m.engine.info}
 	if len(tokens.IDs) == 0 {
 		m.matchSPDXTags(b, &result)
 		sortResult(&result)
 		return result, nil
 	}
-	candidates, method, err := m.engine.collectExactMatches(ctx, tokens.IDs)
+	var candidates []exactMatch
+	var method Method
+	var err error
+	if len(tokens.UnknownAfter) != 0 {
+		candidates, err = m.engine.collectAhoMatches(ctx, tokens.IDs)
+		method = Exact
+	} else {
+		candidates, method, err = m.engine.collectExactMatches(ctx, tokens.IDs)
+	}
 	if err != nil {
 		return Result{}, err
+	}
+	var offsets []tokenize.Offset
+	if len(candidates) != 0 && method == Exact && len(tokens.UnknownAfter) != 0 {
+		if cap(scratch.offsets) < len(tokens.IDs) {
+			scratch.offsets = make([]tokenize.Offset, 0, len(tokens.IDs))
+		}
+		offsets = tokenize.KnownTokenOffsetsAppend(
+			b,
+			tokens.UnknownAfter,
+			scratch.offsets,
+		)
+		scratch.offsets = offsets
+		candidates = m.engine.filterUnknownSpanningMatches(candidates, tokens.UnknownAfter)
 	}
 	candidates, err = filterExactMatches(ctx, m.engine, candidates, filters)
 	if err != nil {
 		return Result{}, err
 	}
-	var offsets []tokenize.Offset
-	if len(candidates) != 0 && method == Exact {
+	if len(candidates) != 0 && method == Exact && offsets == nil {
 		if cap(scratch.offsets) < len(tokens.IDs) {
 			scratch.offsets = make([]tokenize.Offset, 0, len(tokens.IDs))
 		}
@@ -380,6 +408,27 @@ func (m *Matcher) match(ctx context.Context, b []byte, filters exactFilterOption
 	return result, nil
 }
 
+// Full license texts may contain variable names. Short evidence rules and
+// continuous rules must match without unknown words between their tokens.
+func (e *matchEngine) filterUnknownSpanningMatches(
+	matches []exactMatch,
+	unknownAfter []uint32,
+) []exactMatch {
+	kept := matches[:0]
+	for _, match := range matches {
+		position, _ := slices.BinarySearch(unknownAfter, uint32(match.tokenStart+1))
+		spansUnknown := position < len(unknownAfter) &&
+			unknownAfter[position] < uint32(match.tokenEnd)
+		flags := e.rules[match.ruleIndex].Flags
+		if spansUnknown &&
+			(flags&corpus.FlagLicenseText == 0 || flags&corpus.FlagContinuous != 0) {
+			continue
+		}
+		kept = append(kept, match)
+	}
+	return kept
+}
+
 const maxExactMatchCandidates = 1_000_000
 
 // Large candidate sets use two full automaton passes so the retained slice is
@@ -393,14 +442,21 @@ func (e *matchEngine) collectExactMatches(
 	if matches := e.hashMatches(tokens); len(matches) != 0 {
 		return matches, Hash, nil
 	}
+	matches, err := e.collectAhoMatches(ctx, tokens)
+	return matches, Exact, err
+}
 
+func (e *matchEngine) collectAhoMatches(
+	ctx context.Context,
+	tokens []tokenize.ID,
+) ([]exactMatch, error) {
 	var candidates []exactMatch
 	var outputs []uint32
 	state := uint32(0)
 	for position, token := range tokens {
 		if position&4095 == 0 {
 			if err := ctx.Err(); err != nil {
-				return nil, "", err
+				return nil, err
 			}
 		}
 		state = e.automaton.Next(state, uint32(token))
@@ -411,7 +467,7 @@ func (e *matchEngine) collectExactMatches(
 				continue
 			}
 			if len(candidates) == maxExactMatchCandidates {
-				return nil, "", exactMatchCandidateLimitError()
+				return nil, exactMatchCandidateLimitError()
 			}
 			candidates = append(candidates, exactMatch{
 				ruleIndex:  ruleIndex,
@@ -420,11 +476,11 @@ func (e *matchEngine) collectExactMatches(
 			})
 			if len(candidates) == exactMatchTwoPassThreshold {
 				matches, err := e.collectManyExactMatches(ctx, tokens)
-				return matches, Exact, err
+				return matches, err
 			}
 		}
 	}
-	return candidates, Exact, nil
+	return candidates, nil
 }
 
 func (e *matchEngine) collectManyExactMatches(

@@ -34,11 +34,14 @@ type Tokens struct {
 	Offsets []Offset
 }
 
-// IDTokens contains token IDs and the byte range spanning all input tokens.
+// IDTokens contains known token IDs, unknown-word positions, and the byte range
+// spanning the known tokens. UnknownAfter stores the number of known tokens
+// preceding each unknown word.
 type IDTokens struct {
-	IDs   []ID
-	Start int
-	End   int
+	IDs          []ID
+	UnknownAfter []uint32
+	Start        int
+	End          int
 }
 
 // Word is a normalized word and its byte range in the original input.
@@ -141,27 +144,37 @@ func (v *Vocabulary) Tokenize(input []byte) Tokens {
 	return Tokens{IDs: ids, Offsets: offsets}
 }
 
-// TokenizeIDs normalizes input and maps every word to an ID. Start and End
-// span the first through last token without retaining an offset for every
-// token.
+// TokenizeIDs normalizes input and maps known words to IDs. Start and End span
+// the first through last known token without retaining every token offset.
 func (v *Vocabulary) TokenizeIDs(input []byte) IDTokens {
 	capacity := min(len(input)/averageWordBytes, maximumInitialTokenCapacity)
-	return v.TokenizeIDsAppend(input, make([]ID, 0, capacity), nil)
+	return v.TokenizeIDsAppend(input, make([]ID, 0, capacity), nil, nil)
 }
 
-// TokenizeIDsAppend is TokenizeIDs writing into ids[:0]. wordScratch, when
-// provided, is reused for case normalization and may be grown.
-func (v *Vocabulary) TokenizeIDsAppend(input []byte, ids []ID, wordScratch *[]byte) IDTokens {
-	result := IDTokens{IDs: ids[:0]}
+// TokenizeIDsAppend is TokenizeIDs writing into ids[:0] and
+// unknownAfter[:0]. wordScratch, when provided, is reused for case
+// normalization and may be grown.
+func (v *Vocabulary) TokenizeIDsAppend(
+	input []byte,
+	ids []ID,
+	unknownAfter []uint32,
+	wordScratch *[]byte,
+) IDTokens {
+	result := IDTokens{IDs: ids[:0], UnknownAfter: unknownAfter[:0]}
 	var local []byte
 	if wordScratch == nil {
 		wordScratch = &local
 	}
 	scan(input, func(start, end int) {
+		id := v.lookup(input[start:end], wordScratch)
+		if id == Unknown {
+			result.UnknownAfter = append(result.UnknownAfter, uint32(len(result.IDs)))
+			return
+		}
 		if len(result.IDs) == 0 {
 			result.Start = start
 		}
-		result.IDs = append(result.IDs, v.lookup(input[start:end], wordScratch))
+		result.IDs = append(result.IDs, id)
 		result.End = end
 	})
 	return result
@@ -177,6 +190,26 @@ func TokenOffsets(input []byte, tokenCount int) []Offset {
 func TokenOffsetsAppend(input []byte, offsets []Offset) []Offset {
 	offsets = offsets[:0]
 	scan(input, func(start, end int) {
+		offsets = append(offsets, Offset{Start: start, End: end})
+	})
+	return offsets
+}
+
+// KnownTokenOffsetsAppend returns byte ranges for known words using the
+// unknown-word positions returned by TokenizeIDsAppend.
+func KnownTokenOffsetsAppend(
+	input []byte,
+	unknownAfter []uint32,
+	offsets []Offset,
+) []Offset {
+	offsets = offsets[:0]
+	unknownIndex := 0
+	scan(input, func(start, end int) {
+		if unknownIndex < len(unknownAfter) &&
+			unknownAfter[unknownIndex] == uint32(len(offsets)) {
+			unknownIndex++
+			return
+		}
 		offsets = append(offsets, Offset{Start: start, End: end})
 	})
 	return offsets
