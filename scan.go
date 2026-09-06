@@ -1246,6 +1246,7 @@ func legalFileRoleFlags(filePath string) (bool, bool) {
 			strings.EqualFold(directory, "licence") ||
 			strings.EqualFold(directory, "licences") {
 			licenseRole = true
+			break
 		}
 		start += end + 1
 	}
