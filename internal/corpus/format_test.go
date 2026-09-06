@@ -1,6 +1,7 @@
 package corpus
 
 import (
+	"bufio"
 	"bytes"
 	"slices"
 	"testing"
@@ -95,6 +96,15 @@ func TestRoundTrip(t *testing.T) {
 	if err := got.Automaton.Validate(2); err != nil {
 		t.Fatal(err)
 	}
+	if !slices.Equal(got.Automaton.EdgeStarts, index.Automaton.EdgeStarts) {
+		t.Fatalf("edge starts = %#v, want %#v", got.Automaton.EdgeStarts, index.Automaton.EdgeStarts)
+	}
+	if !slices.Equal(got.Automaton.EdgeTokens, index.Automaton.EdgeTokens) {
+		t.Fatalf("edge tokens = %#v, want %#v", got.Automaton.EdgeTokens, index.Automaton.EdgeTokens)
+	}
+	if !slices.Equal(got.Automaton.TerminalHeads, index.Automaton.TerminalHeads) {
+		t.Fatalf("terminal heads = %#v, want %#v", got.Automaton.TerminalHeads, index.Automaton.TerminalHeads)
+	}
 	if len(got.SPDXKeys) != 2 ||
 		got.SPDXKeys["apache-2.0"] != "apache-2.0" ||
 		got.SPDXKeys["bsd-3-clause"] != "bsd-new" {
@@ -183,5 +193,109 @@ func TestReadRejectsInvalidData(t *testing.T) {
 
 	if _, err := Read(bytes.NewReader([]byte("not a corpus"))); err == nil {
 		t.Fatal("Read accepted invalid data")
+	}
+}
+
+func TestEdgeCountsRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	want := []uint32{0, 2, 2, 2}
+	var encoded bytes.Buffer
+	if err := writeEdgeCounts(&encoded, want); err != nil {
+		t.Fatal(err)
+	}
+	got, err := readEdgeCounts(bufio.NewReader(&encoded), len(want)-1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("edge starts = %#v, want %#v", got, want)
+	}
+}
+
+func TestReadEdgeCountsRejectsNonZeroPadding(t *testing.T) {
+	t.Parallel()
+
+	encoded := bytes.NewReader([]byte{0b10000011})
+	if _, err := readEdgeCounts(bufio.NewReader(encoded), 3); err == nil {
+		t.Fatal("readEdgeCounts accepted non-zero padding")
+	}
+}
+
+func TestEdgeTokensRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	edgeStarts := []uint32{0, 2, 2}
+	for _, want := range [][]uint32{
+		{1, 1_000},
+		{1, 70_000},
+	} {
+		var encoded bytes.Buffer
+		if err := writeEdgeTokens(&encoded, edgeStarts, want); err != nil {
+			t.Fatal(err)
+		}
+		got, err := readEdgeTokens(bufio.NewReader(&encoded), edgeStarts)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !slices.Equal(got, want) {
+			t.Fatalf("edge tokens = %#v, want %#v", got, want)
+		}
+	}
+}
+
+func TestReadEdgeTokensRejectsInvalidWidth(t *testing.T) {
+	t.Parallel()
+
+	var encoded bytes.Buffer
+	if err := writeUvarint(&encoded, bitsPerByte); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readEdgeTokens(bufio.NewReader(&encoded), []uint32{0, 1}); err == nil {
+		t.Fatal("readEdgeTokens accepted an invalid width")
+	}
+}
+
+func TestReadEdgeTokensRejectsZeroDelta(t *testing.T) {
+	t.Parallel()
+
+	var encoded bytes.Buffer
+	if err := writeUvarint(&encoded, shortTokenBit); err != nil {
+		t.Fatal(err)
+	}
+	encoded.Write([]byte{0, 0})
+	if _, err := readEdgeTokens(bufio.NewReader(&encoded), []uint32{0, 1}); err == nil {
+		t.Fatal("readEdgeTokens accepted a zero delta")
+	}
+}
+
+func TestTerminalHeadsRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	want := []uint32{aho.None, 2, aho.None, 0, aho.None, 1}
+	var encoded bytes.Buffer
+	if err := writeTerminalHeads(&encoded, want); err != nil {
+		t.Fatal(err)
+	}
+	got, err := readTerminalHeads(bufio.NewReader(&encoded), len(want))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("terminal heads = %#v, want %#v", got, want)
+	}
+}
+
+func TestReadTerminalHeadsRejectsDuplicateNode(t *testing.T) {
+	t.Parallel()
+
+	var encoded bytes.Buffer
+	for _, value := range []uint64{2, 1, 0, 0, 1} {
+		if err := writeUvarint(&encoded, value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := readTerminalHeads(bufio.NewReader(&encoded), 2); err == nil {
+		t.Fatal("readTerminalHeads accepted a duplicate node")
 	}
 }
