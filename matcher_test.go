@@ -165,6 +165,24 @@ func TestMatcherAhoNoticeDoesNotSpanUnknownWords(t *testing.T) {
 	}
 }
 
+func TestMatcherAhoLongNoticeIgnoresUnknownWords(t *testing.T) {
+	t.Parallel()
+
+	matcher := testMatcher(t, false)
+	inputWords := make([]string, minimumVariableNoticeTokens+1)
+	for index := range inputWords {
+		inputWords[index] = "alpha"
+	}
+	inputWords[minimumVariableNoticeTokens/2] = "projectname"
+	result, err := matcher.Match(context.Background(), []byte(strings.Join(inputWords, " ")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := resultExpressions(result); !slices.Contains(got, "LicenseRef-scancode-mpl-2.0") {
+		t.Fatalf("expressions = %v, want LicenseRef-scancode-mpl-2.0", got)
+	}
+}
+
 func TestMatcherAhoContinuousTextDoesNotSpanUnknownWords(t *testing.T) {
 	t.Parallel()
 
@@ -717,6 +735,7 @@ func testMatcher(t *testing.T, matchedText bool) *Matcher {
 		}
 		return ids
 	}
+	longNotice := strings.TrimSpace(strings.Repeat("alpha ", minimumVariableNoticeTokens))
 	rules := []corpus.Rule{
 		{
 			ID:         "a-clue.RULE",
@@ -779,6 +798,13 @@ func testMatcher(t *testing.T, matchedText bool) *Matcher {
 			StopwordAfter: []uint32{1},
 			Flags:         corpus.FlagLicenseNotice | corpus.FlagContinuous,
 			Relevance:     100,
+		},
+		{
+			ID:         "j-long-notice.RULE",
+			Expression: "MPL-2.0",
+			Tokens:     tokenIDs(longNotice),
+			Flags:      corpus.FlagLicenseNotice,
+			Relevance:  100,
 		},
 	}
 	patterns := make([]aho.Pattern, len(rules))
