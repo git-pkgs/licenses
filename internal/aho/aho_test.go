@@ -90,6 +90,36 @@ func TestBuildFailureLinksReconstructsAutomaton(t *testing.T) {
 	}
 }
 
+func TestBuildFailureLinksParallelReconstructsAutomaton(t *testing.T) {
+	t.Parallel()
+
+	patterns := make([]Pattern, 300)
+	for value := range patterns {
+		patterns[value] = Pattern{
+			Tokens: []uint32{uint32(value + 1), uint32(value%50 + 1), 2_000},
+			Value:  uint32(value),
+		}
+	}
+	automaton, err := Build(patterns, len(patterns))
+	if err != nil {
+		t.Fatal(err)
+	}
+	failures, outputLinks, err := BuildFailureLinks(
+		automaton.EdgeStarts,
+		automaton.EdgeTokens,
+		automaton.TerminalHeads,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(failures, automaton.Failures) {
+		t.Fatal("parallel failure links differ")
+	}
+	if !slices.Equal(outputLinks, automaton.OutputLinks) {
+		t.Fatal("parallel output links differ")
+	}
+}
+
 func TestNextRootTableAgreesWithBinarySearch(t *testing.T) {
 	t.Parallel()
 

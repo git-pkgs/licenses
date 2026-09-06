@@ -4,7 +4,9 @@ package aho
 import (
 	"errors"
 	"fmt"
+	"runtime"
 	"slices"
+	"sync"
 )
 
 // None is the sentinel used for absent nodes and outputs.
@@ -211,6 +213,8 @@ func BuildFailureLinks(
 	edgeTokens []uint32,
 	terminalHeads []uint32,
 ) ([]uint32, []uint32, error) {
+	const minimumParallelEdges = 256
+
 	nodeCount := len(terminalHeads)
 	if nodeCount == 0 || len(edgeStarts) != nodeCount+1 || len(edgeTokens) != nodeCount-1 {
 		return nil, nil, errors.New("aho: inconsistent trie arrays")
@@ -220,19 +224,103 @@ func BuildFailureLinks(
 	for node := range outputLinks {
 		outputLinks[node] = None
 	}
-	for parent := range nodeCount {
-		start, end := edgeStarts[parent], edgeStarts[parent+1]
-		for edge := start; edge < end; edge++ {
-			child := edge + 1
-			if parent == 0 {
-				continue
+	rootNext := buildRootTable(edgeStarts, edgeTokens)
+	workerCount := min(runtime.GOMAXPROCS(0), nodeCount)
+	if workerCount == 1 {
+		buildFailureLinkRange(
+			edgeStarts,
+			edgeTokens,
+			rootNext,
+			terminalHeads,
+			failures,
+			outputLinks,
+			1,
+			uint32(nodeCount),
+		)
+		return failures, outputLinks, nil
+	}
+	type linkRange struct {
+		start uint32
+		end   uint32
+	}
+	work := make(chan linkRange, workerCount)
+	done := make(chan struct{}, workerCount)
+	var workers sync.WaitGroup
+	for range workerCount {
+		workers.Go(func() {
+			for nodes := range work {
+				buildFailureLinkRange(
+					edgeStarts,
+					edgeTokens,
+					rootNext,
+					terminalHeads,
+					failures,
+					outputLinks,
+					nodes.start,
+					nodes.end,
+				)
+				done <- struct{}{}
 			}
+		})
+	}
+
+	levelStart := uint32(1)
+	levelEnd := edgeStarts[1] + 1
+	for levelStart < levelEnd {
+		// Failure targets are complete because nodes are numbered breadth-first.
+		parentCount := int(levelEnd - levelStart)
+		levelWorkers := min(workerCount, parentCount)
+		edgeCount := edgeStarts[levelEnd] - edgeStarts[levelStart]
+		if levelWorkers == 1 || edgeCount < minimumParallelEdges {
+			buildFailureLinkRange(
+				edgeStarts,
+				edgeTokens,
+				rootNext,
+				terminalHeads,
+				failures,
+				outputLinks,
+				levelStart,
+				levelEnd,
+			)
+		} else {
+			chunkSize := (parentCount + levelWorkers - 1) / levelWorkers
+			jobs := 0
+			for start := levelStart; start < levelEnd; start += uint32(chunkSize) {
+				end := min(start+uint32(chunkSize), levelEnd)
+				work <- linkRange{start: start, end: end}
+				jobs++
+			}
+			for range jobs {
+				<-done
+			}
+		}
+		levelStart, levelEnd = edgeStarts[levelStart]+1, edgeStarts[levelEnd]+1
+	}
+	close(work)
+	workers.Wait()
+	return failures, outputLinks, nil
+}
+
+func buildFailureLinkRange(
+	edgeStarts []uint32,
+	edgeTokens []uint32,
+	rootNext []uint32,
+	terminalHeads []uint32,
+	failures []uint32,
+	outputLinks []uint32,
+	start uint32,
+	end uint32,
+) {
+	for parent := start; parent < end; parent++ {
+		first, last := edgeStarts[parent], edgeStarts[parent+1]
+		for edge := first; edge < last; edge++ {
+			child := edge + 1
 			token := edgeTokens[edge]
 			failure := failures[parent]
-			target, found := directImplicit(edgeStarts, edgeTokens, failure, token)
+			target, found := directFailure(edgeStarts, edgeTokens, rootNext, failure, token)
 			for !found && failure != 0 {
 				failure = failures[failure]
-				target, found = directImplicit(edgeStarts, edgeTokens, failure, token)
+				target, found = directFailure(edgeStarts, edgeTokens, rootNext, failure, token)
 			}
 			if found {
 				failures[child] = target
@@ -245,7 +333,23 @@ func BuildFailureLinks(
 			}
 		}
 	}
-	return failures, outputLinks, nil
+}
+
+func directFailure(
+	edgeStarts []uint32,
+	edgeTokens []uint32,
+	rootNext []uint32,
+	state uint32,
+	token uint32,
+) (uint32, bool) {
+	if state != 0 {
+		return directImplicit(edgeStarts, edgeTokens, state, token)
+	}
+	if uint64(token) >= uint64(len(rootNext)) {
+		return 0, false
+	}
+	target := rootNext[token]
+	return target, target != 0
 }
 
 func reorderBreadthFirst(
@@ -303,19 +407,19 @@ func reorderBreadthFirst(
 // widest fanout, so a direct token-indexed lookup replaces its binary
 // search. Call after EdgeStarts and EdgeTokens are populated.
 func (a *Automaton) BuildRootTable() {
-	if len(a.EdgeStarts) < 2 {
-		return
+	a.rootNext = buildRootTable(a.EdgeStarts, a.EdgeTokens)
+}
+
+func buildRootTable(edgeStarts []uint32, edgeTokens []uint32) []uint32 {
+	if len(edgeStarts) < 2 || edgeStarts[1] == 0 {
+		return nil
 	}
-	end := a.EdgeStarts[1]
-	if end == 0 {
-		a.rootNext = nil
-		return
+	end := edgeStarts[1]
+	table := make([]uint32, edgeTokens[end-1]+1)
+	for edge := edgeStarts[0]; edge < end; edge++ {
+		table[edgeTokens[edge]] = edge + 1
 	}
-	table := make([]uint32, a.EdgeTokens[end-1]+1)
-	for edge := a.EdgeStarts[0]; edge < end; edge++ {
-		table[a.EdgeTokens[edge]] = edge + 1
-	}
-	a.rootNext = table
+	return table
 }
 
 // Next advances state with token, following failure links as needed.
