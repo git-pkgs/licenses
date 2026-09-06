@@ -160,6 +160,8 @@ type matchEngine struct {
 	spdx                   spdxIndex
 }
 
+const minimumVariableNoticeTokens = 15
+
 // matchRule contains only the rule data needed after matcher construction.
 type matchRule struct {
 	ID            string
@@ -446,8 +448,8 @@ func (m *Matcher) match(ctx context.Context, b []byte, filters exactFilterOption
 	return result, nil
 }
 
-// Full license texts may contain variable names. Strict rules require the same
-// stopword positions as their source text.
+// License texts and long notices may contain variable names. Strict rules
+// require the same stopword positions as their source text.
 func (e *matchEngine) filterOmittedSpanningMatches(
 	matches []exactMatch,
 	unknownAfter []uint32,
@@ -458,8 +460,13 @@ func (e *matchEngine) filterOmittedSpanningMatches(
 		spansUnknown := matchSpansOmittedWord(match, unknownAfter)
 		flags := e.rules[match.ruleIndex].Flags
 		strict := flags&(corpus.FlagContinuous|corpus.FlagRequiredPhrase) != 0
-		if spansUnknown && (flags&corpus.FlagLicenseText == 0 || strict) {
-			continue
+		if spansUnknown {
+			allowsVariableWords := flags&corpus.FlagLicenseText != 0 ||
+				flags&corpus.FlagLicenseNotice != 0 &&
+					e.ruleTokenLengths[match.ruleIndex] >= minimumVariableNoticeTokens
+			if !allowsVariableWords || strict {
+				continue
+			}
 		}
 		if strict && !stopwordsAlign(match, stopwordAfter, e.rules[match.ruleIndex].StopwordAfter) {
 			continue
