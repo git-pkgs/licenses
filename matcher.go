@@ -154,6 +154,7 @@ type matchEngine struct {
 	ruleTokenLengths       []uint32
 	ruleExpressionMetadata []uint32
 	expressionMetadata     []expressionMetadata
+	hasStrictStopwords     bool
 	automaton              aho.Automaton
 	hashes                 map[uint64][]uint32
 	spdx                   spdxIndex
@@ -161,10 +162,11 @@ type matchEngine struct {
 
 // matchRule contains only the rule data needed after matcher construction.
 type matchRule struct {
-	ID         string
-	Expression string
-	Flags      uint16
-	Relevance  uint8
+	ID            string
+	Expression    string
+	StopwordAfter []uint32
+	Flags         uint16
+	Relevance     uint8
 }
 
 type expressionMetadata struct {
@@ -208,7 +210,10 @@ func New(options ...Option) (*Matcher, error) {
 }
 
 func newMatchEngine(index corpus.Index) (*matchEngine, error) {
-	vocabulary, err := tokenize.NewVocabularyFromWords(index.Vocabulary)
+	vocabulary, err := tokenize.NewVocabularyFromWordsWithStopwords(
+		index.Vocabulary,
+		index.StopwordIDs,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -219,6 +224,7 @@ func newMatchEngine(index corpus.Index) (*matchEngine, error) {
 	ruleTokenLengths := make([]uint32, len(index.Rules))
 	ruleMetadata := make([]uint32, len(index.Rules))
 	var metadata []expressionMetadata
+	hasStrictStopwords := false
 	for ruleIndex, rule := range index.Rules {
 		// Foundation attribution alone does not identify an Apache license version.
 		switch rule.ID {
@@ -227,10 +233,15 @@ func newMatchEngine(index corpus.Index) (*matchEngine, error) {
 			rule.Flags |= corpus.FlagLicenseClue
 		}
 		rules[ruleIndex] = matchRule{
-			ID:         rule.ID,
-			Expression: rule.Expression,
-			Flags:      rule.Flags,
-			Relevance:  rule.Relevance,
+			ID:            rule.ID,
+			Expression:    rule.Expression,
+			StopwordAfter: rule.StopwordAfter,
+			Flags:         rule.Flags,
+			Relevance:     rule.Relevance,
+		}
+		if len(rule.StopwordAfter) != 0 &&
+			rule.Flags&(corpus.FlagContinuous|corpus.FlagRequiredPhrase) != 0 {
+			hasStrictStopwords = true
 		}
 		ruleTokenLengths[ruleIndex] = uint32(len(rule.Tokens))
 		metadataIndex, exists := metadataIndexes[rule.Expression]
@@ -263,6 +274,7 @@ func newMatchEngine(index corpus.Index) (*matchEngine, error) {
 		ruleTokenLengths:       ruleTokenLengths,
 		ruleExpressionMetadata: ruleMetadata,
 		expressionMetadata:     metadata,
+		hasStrictStopwords:     hasStrictStopwords,
 		automaton:              index.Automaton,
 		hashes:                 hashes,
 		spdx:                   spdxIndex,
@@ -271,10 +283,11 @@ func newMatchEngine(index corpus.Index) (*matchEngine, error) {
 
 // matchScratch holds per-call buffers reused across Match invocations.
 type matchScratch struct {
-	ids          []tokenize.ID
-	offsets      []tokenize.Offset
-	unknownAfter []uint32
-	word         []byte
+	ids           []tokenize.ID
+	offsets       []tokenize.Offset
+	unknownAfter  []uint32
+	stopwordAfter []uint32
+	word          []byte
 }
 
 // Oversized calls keep their buffers separate from the bounded pooled reserve.
@@ -300,6 +313,7 @@ func (s *matchScratch) retain(previous matchScratch) {
 	s.ids = retainBuffer(s.ids, previous.ids, matchScratchTokenCap)
 	s.offsets = retainBuffer(s.offsets, previous.offsets, matchScratchTokenCap)
 	s.unknownAfter = retainBuffer(s.unknownAfter, previous.unknownAfter, matchScratchTokenCap)
+	s.stopwordAfter = retainBuffer(s.stopwordAfter, previous.stopwordAfter, matchScratchTokenCap)
 	s.word = retainBuffer(s.word, previous.word, matchScratchWordCap)
 }
 
@@ -338,10 +352,12 @@ func (m *Matcher) match(ctx context.Context, b []byte, filters exactFilterOption
 		b,
 		scratch.ids,
 		scratch.unknownAfter,
+		scratch.stopwordAfter,
 		&scratch.word,
 	)
 	scratch.ids = tokens.IDs
 	scratch.unknownAfter = tokens.UnknownAfter
+	scratch.stopwordAfter = tokens.StopwordAfter
 	result := Result{Corpus: m.engine.info}
 	if len(tokens.IDs) == 0 {
 		m.matchSPDXTags(b, &result)
@@ -361,17 +377,39 @@ func (m *Matcher) match(ctx context.Context, b []byte, filters exactFilterOption
 		return Result{}, err
 	}
 	var offsets []tokenize.Offset
-	if len(candidates) != 0 && method == Exact && len(tokens.UnknownAfter) != 0 {
+	hasOmittedWords := len(tokens.UnknownAfter) != 0 || len(tokens.StopwordAfter) != 0
+	if len(candidates) != 0 && (hasOmittedWords || m.engine.hasStrictStopwords) {
+		candidates = m.engine.filterOmittedSpanningMatches(
+			candidates,
+			tokens.UnknownAfter,
+			tokens.StopwordAfter,
+		)
+	}
+	if len(candidates) == 0 && method == Hash {
+		candidates, err = m.engine.collectAhoMatches(ctx, tokens.IDs)
+		if err != nil {
+			return Result{}, err
+		}
+		method = Exact
+		if len(candidates) != 0 && (hasOmittedWords || m.engine.hasStrictStopwords) {
+			candidates = m.engine.filterOmittedSpanningMatches(
+				candidates,
+				tokens.UnknownAfter,
+				tokens.StopwordAfter,
+			)
+		}
+	}
+	if len(candidates) != 0 && method == Exact && hasOmittedWords {
 		if cap(scratch.offsets) < len(tokens.IDs) {
 			scratch.offsets = make([]tokenize.Offset, 0, len(tokens.IDs))
 		}
 		offsets = tokenize.KnownTokenOffsetsAppend(
 			b,
 			tokens.UnknownAfter,
+			tokens.StopwordAfter,
 			scratch.offsets,
 		)
 		scratch.offsets = offsets
-		candidates = m.engine.filterUnknownSpanningMatches(candidates, tokens.UnknownAfter)
 	}
 	candidates, err = filterExactMatches(ctx, m.engine, candidates, filters)
 	if err != nil {
@@ -408,25 +446,47 @@ func (m *Matcher) match(ctx context.Context, b []byte, filters exactFilterOption
 	return result, nil
 }
 
-// Full license texts may contain variable names. Short evidence rules and
-// continuous rules must match without unknown words between their tokens.
-func (e *matchEngine) filterUnknownSpanningMatches(
+// Full license texts may contain variable names. Strict rules require the same
+// stopword positions as their source text.
+func (e *matchEngine) filterOmittedSpanningMatches(
 	matches []exactMatch,
 	unknownAfter []uint32,
+	stopwordAfter []uint32,
 ) []exactMatch {
 	kept := matches[:0]
 	for _, match := range matches {
-		position, _ := slices.BinarySearch(unknownAfter, uint32(match.tokenStart+1))
-		spansUnknown := position < len(unknownAfter) &&
-			unknownAfter[position] < uint32(match.tokenEnd)
+		spansUnknown := matchSpansOmittedWord(match, unknownAfter)
 		flags := e.rules[match.ruleIndex].Flags
-		if spansUnknown &&
-			(flags&corpus.FlagLicenseText == 0 || flags&corpus.FlagContinuous != 0) {
+		strict := flags&(corpus.FlagContinuous|corpus.FlagRequiredPhrase) != 0
+		if spansUnknown && (flags&corpus.FlagLicenseText == 0 || strict) {
+			continue
+		}
+		if strict && !stopwordsAlign(match, stopwordAfter, e.rules[match.ruleIndex].StopwordAfter) {
 			continue
 		}
 		kept = append(kept, match)
 	}
 	return kept
+}
+
+func matchSpansOmittedWord(match exactMatch, positions []uint32) bool {
+	position, _ := slices.BinarySearch(positions, uint32(match.tokenStart+1))
+	return position < len(positions) && positions[position] < uint32(match.tokenEnd)
+}
+
+func stopwordsAlign(match exactMatch, query, rule []uint32) bool {
+	start := uint32(match.tokenStart)
+	end := uint32(match.tokenEnd)
+	queryIndex, _ := slices.BinarySearch(query, start+1)
+	ruleIndex := 0
+	for queryIndex < len(query) && query[queryIndex] < end && ruleIndex < len(rule) {
+		if query[queryIndex]-start != rule[ruleIndex] {
+			return false
+		}
+		queryIndex++
+		ruleIndex++
+	}
+	return ruleIndex == len(rule) && (queryIndex == len(query) || query[queryIndex] >= end)
 }
 
 const maxExactMatchCandidates = 1_000_000

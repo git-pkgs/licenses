@@ -156,6 +156,8 @@ UTF-8.
 Matching uses normalized whole-text hashes, exact token sequences, and
 `SPDX-License-Identifier` tag lines. It does not use fuzzy or sequence
 matching, so edits within a license text can prevent a match.
+Tokenization omits ScanCode's HTML and entity stopwords. Continuous and
+required-phrase matching checks the source stopword positions.
 
 ## Corpus
 

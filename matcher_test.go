@@ -408,6 +408,56 @@ func TestMatcherKeepsRequiredPhraseRulesWhenMatchedExactly(t *testing.T) {
 	}
 }
 
+func TestMatcherIgnoresScanCodeStopwordsOutsideContinuousRules(t *testing.T) {
+	t.Parallel()
+
+	matcher := testMatcher(t, true)
+	input := []byte("alpha &quot; reject")
+	result, err := matcher.Match(context.Background(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if expressions := resultExpressions(result); !slices.Equal(expressions, []string{"ISC"}) {
+		t.Fatalf("expressions = %v", expressions)
+	}
+	match := result.Detections[0].Matches[0]
+	if !bytes.Equal(match.Matched, input) {
+		t.Fatalf("matched text = %q, want %q", match.Matched, input)
+	}
+}
+
+func TestMatcherPreservesStopwordsPresentInContinuousRules(t *testing.T) {
+	t.Parallel()
+
+	matcher := testMatcher(t, true)
+	input := []byte("beta &quot; reject")
+	result, err := matcher.Match(context.Background(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if expressions := resultExpressions(result); !slices.Equal(expressions, []string{"Apache-2.0"}) {
+		t.Fatalf("expressions = %v", expressions)
+	}
+	match := result.Detections[0].Matches[0]
+	if !bytes.Equal(match.Matched, input) {
+		t.Fatalf("matched text = %q, want %q", match.Matched, input)
+	}
+
+	for _, withoutRequiredStopword := range []string{
+		"beta reject",
+		"beta mystery reject",
+		"beta quot quot reject",
+	} {
+		result, err := matcher.Match(context.Background(), []byte(withoutRequiredStopword))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if expressions := resultExpressions(result); !slices.Equal(expressions, []string{"MIT"}) {
+			t.Fatalf("%q expressions = %v, want [MIT]", withoutRequiredStopword, expressions)
+		}
+	}
+}
+
 func TestMatcherReturnsContextError(t *testing.T) {
 	t.Parallel()
 
@@ -653,7 +703,7 @@ func resultExpressions(result Result) []string {
 func testMatcher(t *testing.T, matchedText bool) *Matcher {
 	t.Helper()
 
-	words := []string{"alpha", "beta", "clue", "phrase", "reject"}
+	words := []string{"alpha", "beta", "clue", "phrase", "quot", "reject"}
 	vocabulary, err := tokenize.NewVocabularyFromWords(words)
 	if err != nil {
 		t.Fatal(err)
@@ -708,6 +758,28 @@ func testMatcher(t *testing.T, matchedText bool) *Matcher {
 			Flags:      corpus.FlagLicenseNotice,
 			Relevance:  100,
 		},
+		{
+			ID:         "g-continuous.RULE",
+			Expression: "BSD-2-Clause",
+			Tokens:     tokenIDs("alpha reject"),
+			Flags:      corpus.FlagLicenseNotice | corpus.FlagContinuous,
+			Relevance:  100,
+		},
+		{
+			ID:         "h-required-stopwords.RULE",
+			Expression: "JSON",
+			Tokens:     tokenIDs("alpha reject"),
+			Flags:      corpus.FlagLicenseTag | corpus.FlagRequiredPhrase,
+			Relevance:  100,
+		},
+		{
+			ID:            "i-continuous-with-stopwords.RULE",
+			Expression:    "Apache-2.0",
+			Tokens:        tokenIDs("beta reject"),
+			StopwordAfter: []uint32{1},
+			Flags:         corpus.FlagLicenseNotice | corpus.FlagContinuous,
+			Relevance:     100,
+		},
 	}
 	patterns := make([]aho.Pattern, len(rules))
 	for index := range rules {
@@ -723,13 +795,17 @@ func testMatcher(t *testing.T, matchedText bool) *Matcher {
 			RuleCount:    len(rules),
 			SourceCommit: "test-commit",
 		},
-		Vocabulary: words,
-		Rules:      rules,
-		Automaton:  automaton,
+		Vocabulary:  words,
+		StopwordIDs: []uint32{5},
+		Rules:       rules,
+		Automaton:   automaton,
 		ReportingIDs: map[string]string{
-			"agpl-3.0": "AGPL-3.0",
-			"isc":      "ISC",
-			"mit":      "MIT",
+			"agpl-3.0":     "AGPL-3.0",
+			"apache-2.0":   "Apache-2.0",
+			"bsd-2-clause": "BSD-2-Clause",
+			"isc":          "ISC",
+			"json":         "JSON",
+			"mit":          "MIT",
 		},
 	})
 	if err != nil {
@@ -741,31 +817,36 @@ func testMatcher(t *testing.T, matchedText bool) *Matcher {
 func TestMatchScratchRetainsBoundedBuffers(t *testing.T) {
 	t.Parallel()
 	small := matchScratch{
-		ids:          make([]tokenize.ID, 10),
-		offsets:      make([]tokenize.Offset, 10),
-		unknownAfter: make([]uint32, 10),
-		word:         make([]byte, 10),
+		ids:           make([]tokenize.ID, 10),
+		offsets:       make([]tokenize.Offset, 10),
+		unknownAfter:  make([]uint32, 10),
+		stopwordAfter: make([]uint32, 10),
+		word:          make([]byte, 10),
 	}
 	small.retain(matchScratch{})
 	if cap(small.ids) != 10 || cap(small.offsets) != 10 ||
-		cap(small.unknownAfter) != 10 || cap(small.word) != 10 {
+		cap(small.unknownAfter) != 10 || cap(small.stopwordAfter) != 10 ||
+		cap(small.word) != 10 {
 		t.Fatal("small buffers discarded")
 	}
 	large := matchScratch{
-		ids:          make([]tokenize.ID, 0, matchScratchTokenCap+1),
-		offsets:      make([]tokenize.Offset, 0, matchScratchTokenCap+1),
-		unknownAfter: make([]uint32, 0, matchScratchTokenCap+1),
-		word:         make([]byte, 0, matchScratchWordCap+1),
+		ids:           make([]tokenize.ID, 0, matchScratchTokenCap+1),
+		offsets:       make([]tokenize.Offset, 0, matchScratchTokenCap+1),
+		unknownAfter:  make([]uint32, 0, matchScratchTokenCap+1),
+		stopwordAfter: make([]uint32, 0, matchScratchTokenCap+1),
+		word:          make([]byte, 0, matchScratchWordCap+1),
 	}
 	original := large
 	large.retain(matchScratch{})
 	if cap(large.ids) != matchScratchTokenCap || cap(large.offsets) != matchScratchTokenCap ||
-		cap(large.unknownAfter) != matchScratchTokenCap || cap(large.word) != matchScratchWordCap {
+		cap(large.unknownAfter) != matchScratchTokenCap ||
+		cap(large.stopwordAfter) != matchScratchTokenCap || cap(large.word) != matchScratchWordCap {
 		t.Fatal("reserve exceeds its budget")
 	}
 	if &large.ids[:1][0] == &original.ids[:1][0] ||
 		&large.offsets[:1][0] == &original.offsets[:1][0] ||
 		&large.unknownAfter[:1][0] == &original.unknownAfter[:1][0] ||
+		&large.stopwordAfter[:1][0] == &original.stopwordAfter[:1][0] ||
 		&large.word[:1][0] == &original.word[:1][0] {
 		t.Fatal("reserve retains oversized backing array")
 	}
@@ -775,6 +856,7 @@ func TestMatchScratchRetainsBoundedBuffers(t *testing.T) {
 	if &large.ids[:1][0] != &previous.ids[:1][0] ||
 		&large.offsets[:1][0] != &previous.offsets[:1][0] ||
 		&large.unknownAfter[:1][0] != &previous.unknownAfter[:1][0] ||
+		&large.stopwordAfter[:1][0] != &previous.stopwordAfter[:1][0] ||
 		&large.word[:1][0] != &previous.word[:1][0] {
 		t.Fatal("bounded reserve was reallocated")
 	}

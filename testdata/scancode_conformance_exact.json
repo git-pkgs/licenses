@@ -3,7 +3,7 @@
   "mode": "exact-core expressions, duplicates and order ignored; known divergences are won't-fix",
   "cases": 1786,
   "evaluated": 1786,
-  "passed": 1538,
+  "passed": 1565,
   "divergences": [
     {
       "path": "datadriven/lic1/COPYING.gplv3",
@@ -311,7 +311,6 @@
         "public-domain",
         "unicode",
         "unicode-data-software",
-        "unknown-license-reference",
         "zlib"
       ],
       "exact_expected": [
@@ -323,7 +322,7 @@
         "zlib"
       ],
       "stage": "filter-retained",
-      "note": "won't-fix exact core: the filter retained 2 unexpected expression(s)"
+      "note": "won't-fix exact core: the filter retained 1 unexpected expression(s)"
     },
     {
       "path": "datadriven/lic1/eclipse-openj9_html.html",
@@ -339,56 +338,30 @@
         "zlib"
       ],
       "actual": [
-        "autoconf-simple-exception",
+        "(epl-2.0 OR apache-2.0 OR (gpl-2.0 WITH classpath-exception-2.0 AND gpl-2.0 WITH openjdk-exception)) AND bsd-new AND mit AND gpl-3.0-plus WITH autoconf-simple-exception",
         "bsd-new",
-        "classpath-exception-2.0",
-        "epl-2.0",
         "epl-2.0 OR apache-2.0",
-        "gpl-2.0",
-        "gpl-3.0 WITH autoconf-simple-exception-2.0",
-        "gpl-3.0-plus",
-        "openjdk-exception",
-        "other-permissive",
+        "epl-2.0 OR apache-2.0 OR gpl-2.0 WITH classpath-exception-2.0 OR gpl-2.0 WITH openjdk-exception",
+        "gpl-3.0-plus WITH autoconf-simple-exception",
+        "mit",
         "public-domain",
         "unicode",
-        "unknown-license-reference",
-        "warranty-disclaimer"
+        "unicode-data-software",
+        "zlib"
       ],
       "exact_expected": [
+        "(epl-2.0 OR apache-2.0 OR (gpl-2.0 WITH classpath-exception-2.0 AND gpl-2.0 WITH openjdk-exception)) AND bsd-new AND mit AND gpl-3.0-plus WITH autoconf-simple-exception",
         "bsd-new",
         "epl-2.0 OR apache-2.0",
+        "epl-2.0 OR apache-2.0 OR gpl-2.0 WITH classpath-exception-2.0 OR gpl-2.0 WITH openjdk-exception",
+        "gpl-3.0-plus WITH autoconf-simple-exception",
+        "mit",
         "public-domain",
-        "unicode"
-      ],
-      "stage": "wrong-exact-rule-set",
-      "note": "won't-fix exact core: 5 expected expression(s) missing and 10 unexpected exact expression(s) present"
-    },
-    {
-      "path": "datadriven/lic1/eclipse-openj9_html2.html",
-      "expected": [
-        "epl-2.0 OR apache-2.0 OR gpl-2.0 WITH classpath-exception-2.0 OR gpl-2.0 WITH openjdk-exception"
-      ],
-      "actual": [
-        "epl-2.0 OR apache-2.0 OR (gpl-2.0 WITH classpath-exception-2.0 AND gpl-2.0 WITH openjdk-exception)"
-      ],
-      "stage": "wrong-exact-rule-set",
-      "note": "won't-fix exact core: 1 expected expression(s) missing and 1 unexpected exact expression(s) present"
-    },
-    {
-      "path": "datadriven/lic1/ecos.txt",
-      "expected": [
-        "gpl-2.0-plus WITH ecos-exception-2.0"
-      ],
-      "actual": [
-        "ecos-exception-2.0",
-        "gpl-2.0-plus",
-        "gpl-2.0-plus WITH ecos-exception-2.0"
-      ],
-      "exact_expected": [
-        "gpl-2.0-plus WITH ecos-exception-2.0"
+        "unicode",
+        "zlib"
       ],
       "stage": "filter-retained",
-      "note": "won't-fix exact core: the filter retained 2 unexpected expression(s)"
+      "note": "won't-fix exact core: the filter retained 1 unexpected expression(s)"
     },
     {
       "path": "datadriven/lic1/ecos_1.txt",
@@ -412,7 +385,6 @@
       "actual": [
         "epl-1.0",
         "epl-2.0",
-        "gpl-2.0",
         "unknown-license-reference",
         "warranty-disclaimer"
       ],
@@ -420,7 +392,7 @@
         "epl-2.0"
       ],
       "stage": "filter-retained",
-      "note": "won't-fix exact core: the filter retained 4 unexpected expression(s)"
+      "note": "won't-fix exact core: the filter retained 3 unexpected expression(s)"
     },
     {
       "path": "datadriven/lic1/flat.de.po",
@@ -705,41 +677,21 @@
       "note": "won't-fix exact core: the filter suppressed 1 expected expression(s) that matched exactly"
     },
     {
-      "path": "datadriven/lic1/google-analytics-tos.txt",
-      "expected": [
-        "google-analytics-tos"
-      ],
-      "actual": [
-        "unknown-license-reference"
-      ],
-      "stage": "wrong-exact-rule-set",
-      "note": "won't-fix exact core: 1 expected expression(s) missing and 1 unexpected exact expression(s) present"
-    },
-    {
-      "path": "datadriven/lic1/google-analytics-tos_2.htm",
-      "expected": [
-        "google-analytics-tos"
-      ],
-      "actual": [
-        "unknown-license-reference"
-      ],
-      "stage": "wrong-exact-rule-set",
-      "note": "won't-fix exact core: 1 expected expression(s) missing and 1 unexpected exact expression(s) present"
-    },
-    {
       "path": "datadriven/lic1/gpl-2.0-autoconf.txt",
       "expected": [
         "gpl-2.0-plus WITH autoconf-simple-exception-2.0",
         "warranty-disclaimer"
       ],
       "actual": [
+        "free-unknown",
         "gpl-2.0-plus WITH autoconf-simple-exception-2.0"
       ],
       "exact_expected": [
-        "gpl-2.0-plus WITH autoconf-simple-exception-2.0"
+        "gpl-2.0-plus WITH autoconf-simple-exception-2.0",
+        "warranty-disclaimer"
       ],
-      "stage": "partial-exact-rule-set",
-      "note": "won't-fix exact core: 1 expected expression(s) had no exact match"
+      "stage": "filter-suppressed",
+      "note": "won't-fix exact core: the filter suppressed 1 expected expression(s) that matched exactly"
     },
     {
       "path": "datadriven/lic1/gpl-2.0-autoconf_1.txt",
@@ -846,12 +798,13 @@
         "gpl-2.0-plus AND free-unknown"
       ],
       "actual": [
+        "gpl-1.0-plus",
         "gpl-2.0",
         "gpl-2.0 AND free-unknown",
         "gpl-2.0-plus"
       ],
       "stage": "wrong-exact-rule-set",
-      "note": "won't-fix exact core: 1 expected expression(s) missing and 3 unexpected exact expression(s) present"
+      "note": "won't-fix exact core: 1 expected expression(s) missing and 4 unexpected exact expression(s) present"
     },
     {
       "path": "datadriven/lic1/gpl-2.0-plus_41.txt",
@@ -859,12 +812,13 @@
         "gpl-2.0-plus AND free-unknown"
       ],
       "actual": [
+        "gpl-1.0-plus",
         "gpl-2.0",
         "gpl-2.0 AND free-unknown",
         "gpl-2.0-plus"
       ],
       "stage": "wrong-exact-rule-set",
-      "note": "won't-fix exact core: 1 expected expression(s) missing and 3 unexpected exact expression(s) present"
+      "note": "won't-fix exact core: 1 expected expression(s) missing and 4 unexpected exact expression(s) present"
     },
     {
       "path": "datadriven/lic1/gpl-2.0_and_lgpl-2.0-plus.txt",
@@ -1308,22 +1262,6 @@
       "note": "won't-fix exact core: the filter suppressed 1 expected expression(s) that matched exactly"
     },
     {
-      "path": "datadriven/lic2/android-sdk-2012.html",
-      "expected": [
-        "android-sdk-2012"
-      ],
-      "actual": [
-        "android-sdk-2012",
-        "unknown",
-        "unknown-license-reference"
-      ],
-      "exact_expected": [
-        "android-sdk-2012"
-      ],
-      "stage": "filter-retained",
-      "note": "won't-fix exact core: the filter retained 2 unexpected expression(s)"
-    },
-    {
       "path": "datadriven/lic2/apache-1.1_11.txt",
       "expected": [
         "apache-1.1"
@@ -1544,37 +1482,6 @@
       "note": "won't-fix exact core: the filter suppressed 1 expected expression(s) that matched exactly"
     },
     {
-      "path": "datadriven/lic2/apache-2.0_and_bsd-new_and_gpl-2.0-plus_and_lgpl-2.1-plus_and_mpl-1.1_and_other.txt",
-      "expected": [
-        "apache-2.0",
-        "bsd-new",
-        "lgpl-2.1-plus",
-        "mpl-1.1 OR gpl-2.0-plus OR lgpl-2.1-plus",
-        "ms-pl",
-        "unknown-license-reference"
-      ],
-      "actual": [
-        "apache-2.0",
-        "bsd-new",
-        "generic-cla",
-        "lgpl-2.1-plus",
-        "mpl-1.1 OR gpl-2.0-plus OR lgpl-2.1-plus",
-        "ms-pl",
-        "unknown",
-        "unknown-license-reference"
-      ],
-      "exact_expected": [
-        "apache-2.0",
-        "bsd-new",
-        "lgpl-2.1-plus",
-        "mpl-1.1 OR gpl-2.0-plus OR lgpl-2.1-plus",
-        "ms-pl",
-        "unknown-license-reference"
-      ],
-      "stage": "filter-retained",
-      "note": "won't-fix exact core: the filter retained 2 unexpected expression(s)"
-    },
-    {
       "path": "datadriven/lic2/apache-2.0_and_lgpl-2.1.txt",
       "expected": [
         "apache-2.0",
@@ -1695,25 +1602,6 @@
       "note": "won't-fix exact core: the filter retained 2 unexpected expression(s)"
     },
     {
-      "path": "datadriven/lic2/autoconf_aclocal.m4",
-      "expected": [
-        "gpl-1.0-plus WITH autoconf-simple-exception-2.0",
-        "gpl-2.0-plus WITH autoconf-simple-exception-2.0"
-      ],
-      "actual": [
-        "generic-exception",
-        "gpl-1.0-plus",
-        "gpl-2.0-plus WITH autoconf-simple-exception-2.0",
-        "lgpl-2.0-plus",
-        "unknown-license-reference"
-      ],
-      "exact_expected": [
-        "gpl-2.0-plus WITH autoconf-simple-exception-2.0"
-      ],
-      "stage": "wrong-exact-rule-set",
-      "note": "won't-fix exact core: 1 expected expression(s) missing and 4 unexpected exact expression(s) present"
-    },
-    {
       "path": "datadriven/lic2/beerware_variant_and_others_2.txt",
       "expected": [
         "beerware",
@@ -1739,135 +1627,6 @@
         "bsd-unchanged",
         "isc",
         "public-domain"
-      ],
-      "stage": "partial-exact-rule-set",
-      "note": "won't-fix exact core: 1 expected expression(s) had no exact match"
-    },
-    {
-      "path": "datadriven/lic2/boost-1.0_and_bsd-simplified_and_cddl-1.0_and_gpl-2.0-classpath_and_other.txt",
-      "expected": [
-        "apache-2.0",
-        "bitstream",
-        "boost-1.0",
-        "boost-original",
-        "bsd-new",
-        "bsd-original",
-        "cddl-1.0 OR gpl-2.0",
-        "curl",
-        "fsf-unlimited-no-warranty",
-        "gpl-1.0",
-        "gpl-1.0-plus",
-        "gpl-2.0",
-        "gpl-2.0 OR lgpl-2.1 OR mpl-1.1",
-        "gpl-2.0-plus",
-        "ijg",
-        "khronos",
-        "lgpl-2.0 OR apache-2.0",
-        "lgpl-2.0-plus",
-        "lgpl-2.1",
-        "lgpl-3.0",
-        "liberation-font-exception",
-        "lppl-1.2",
-        "mit",
-        "mpl-1.0",
-        "mpl-1.1",
-        "mpl-1.1 OR gpl-2.0 OR lgpl-2.0",
-        "mpl-1.1 OR lgpl-2.1",
-        "openssl",
-        "openssl-ssleay",
-        "other-permissive",
-        "python",
-        "spl-1.0",
-        "ssleay-windows",
-        "stlport-4.5",
-        "unknown-license-reference",
-        "w3c-software-19980720",
-        "x11-keith-packard",
-        "x11-xconsortium",
-        "x11-xconsortium-veillard",
-        "zlib"
-      ],
-      "actual": [
-        "apache-2.0",
-        "bitstream",
-        "boost-1.0",
-        "boost-original",
-        "bsd-new",
-        "bsd-original",
-        "cddl-1.0 OR gpl-2.0",
-        "curl",
-        "fsf-unlimited-no-warranty",
-        "gpl-1.0",
-        "gpl-1.0-plus",
-        "gpl-2.0",
-        "gpl-2.0 OR lgpl-2.1 OR mpl-1.1",
-        "gpl-2.0-plus",
-        "ijg",
-        "khronos",
-        "lgpl-2.0 OR apache-2.0",
-        "lgpl-2.0-plus",
-        "lgpl-2.1",
-        "lgpl-3.0",
-        "liberation-font-exception",
-        "lppl-1.2",
-        "mit",
-        "mpl-1.0",
-        "mpl-1.1",
-        "mpl-1.1 OR gpl-2.0 OR lgpl-2.0",
-        "mpl-1.1 OR lgpl-2.1",
-        "openssl",
-        "openssl-ssleay",
-        "other-permissive",
-        "python",
-        "spl-1.0",
-        "ssleay-windows",
-        "stlport-4.5",
-        "unknown-license-reference",
-        "w3c-software-19980720",
-        "x11-keith-packard",
-        "x11-xconsortium-veillard",
-        "zlib"
-      ],
-      "exact_expected": [
-        "apache-2.0",
-        "bitstream",
-        "boost-1.0",
-        "boost-original",
-        "bsd-new",
-        "bsd-original",
-        "cddl-1.0 OR gpl-2.0",
-        "curl",
-        "fsf-unlimited-no-warranty",
-        "gpl-1.0",
-        "gpl-1.0-plus",
-        "gpl-2.0",
-        "gpl-2.0 OR lgpl-2.1 OR mpl-1.1",
-        "gpl-2.0-plus",
-        "ijg",
-        "khronos",
-        "lgpl-2.0 OR apache-2.0",
-        "lgpl-2.0-plus",
-        "lgpl-2.1",
-        "lgpl-3.0",
-        "liberation-font-exception",
-        "lppl-1.2",
-        "mit",
-        "mpl-1.0",
-        "mpl-1.1",
-        "mpl-1.1 OR gpl-2.0 OR lgpl-2.0",
-        "mpl-1.1 OR lgpl-2.1",
-        "openssl",
-        "openssl-ssleay",
-        "other-permissive",
-        "python",
-        "spl-1.0",
-        "ssleay-windows",
-        "stlport-4.5",
-        "unknown-license-reference",
-        "w3c-software-19980720",
-        "x11-keith-packard",
-        "x11-xconsortium-veillard",
-        "zlib"
       ],
       "stage": "partial-exact-rule-set",
       "note": "won't-fix exact core: 1 expected expression(s) had no exact match"
@@ -1910,17 +1669,6 @@
       "note": "won't-fix exact core: no exact match for 1 expected expression(s)"
     },
     {
-      "path": "datadriven/lic2/bsd-artwork2.txt",
-      "expected": [
-        "bsd-artwork"
-      ],
-      "actual": [
-        "unknown-license-reference"
-      ],
-      "stage": "wrong-exact-rule-set",
-      "note": "won't-fix exact core: 1 expected expression(s) missing and 1 unexpected exact expression(s) present"
-    },
-    {
       "path": "datadriven/lic2/bsd-new_104.txt",
       "expected": [
         "bsd-new"
@@ -1945,23 +1693,7 @@
       "note": "won't-fix exact core: no exact match for 1 expected expression(s)"
     },
     {
-      "path": "datadriven/lic2/bsd-new_13.txt",
-      "expected": [
-        "bsd-new"
-      ],
-      "stage": "no-exact-match",
-      "note": "won't-fix exact core: no exact match for 1 expected expression(s)"
-    },
-    {
       "path": "datadriven/lic2/bsd-new_147.txt",
-      "expected": [
-        "bsd-new"
-      ],
-      "stage": "no-exact-match",
-      "note": "won't-fix exact core: no exact match for 1 expected expression(s)"
-    },
-    {
-      "path": "datadriven/lic2/bsd-new_15.txt",
       "expected": [
         "bsd-new"
       ],
@@ -2017,14 +1749,6 @@
       "note": "won't-fix exact core: no exact match for 1 expected expression(s)"
     },
     {
-      "path": "datadriven/lic2/bsd-new_25.txt",
-      "expected": [
-        "bsd-new"
-      ],
-      "stage": "no-exact-match",
-      "note": "won't-fix exact core: no exact match for 1 expected expression(s)"
-    },
-    {
       "path": "datadriven/lic2/bsd-new_42.txt",
       "expected": [
         "bsd-new"
@@ -2073,22 +1797,6 @@
       "note": "won't-fix exact core: no exact match for 1 expected expression(s)"
     },
     {
-      "path": "datadriven/lic2/bsd-new_84.txt",
-      "expected": [
-        "bsd-new"
-      ],
-      "stage": "no-exact-match",
-      "note": "won't-fix exact core: no exact match for 1 expected expression(s)"
-    },
-    {
-      "path": "datadriven/lic2/bsd-new_85.txt",
-      "expected": [
-        "bsd-new"
-      ],
-      "stage": "no-exact-match",
-      "note": "won't-fix exact core: no exact match for 1 expected expression(s)"
-    },
-    {
       "path": "datadriven/lic2/bsd-new_90.txt",
       "expected": [
         "bsd-new"
@@ -2128,30 +1836,6 @@
       ],
       "stage": "filter-retained",
       "note": "won't-fix exact core: the filter retained 1 unexpected expression(s)"
-    },
-    {
-      "path": "datadriven/lic2/bsd-new_and_bsd-new_and_fsf-unlimited-no-warranty_and_gfdl-1.2_and_other.txt",
-      "expected": [
-        "bsd-new",
-        "fsf-unlimited",
-        "gfdl-1.2-plus",
-        "gpl-3.0-plus",
-        "isc"
-      ],
-      "actual": [
-        "bsd-new",
-        "gfdl-1.2-plus",
-        "gpl-3.0-plus",
-        "isc"
-      ],
-      "exact_expected": [
-        "bsd-new",
-        "gfdl-1.2-plus",
-        "gpl-3.0-plus",
-        "isc"
-      ],
-      "stage": "partial-exact-rule-set",
-      "note": "won't-fix exact core: 1 expected expression(s) had no exact match"
     },
     {
       "path": "datadriven/lic2/bsd-new_and_gpl-2.0-plus_and_mit_and_public-domain_and_other.txt",
@@ -2330,80 +2014,6 @@
       "note": "won't-fix exact core: the filter suppressed 1 expected expression(s) that matched exactly"
     },
     {
-      "path": "datadriven/lic2/newlib/newlib_license.txt",
-      "expected": [
-        "amd-historical",
-        "bsd-new",
-        "bsd-new AND other-permissive AND other-copyleft",
-        "bsd-simplified",
-        "bsd-unmodified",
-        "delorie-historical",
-        "hp-1986",
-        "hs-regexp",
-        "intel-osl-1993",
-        "lgpl-2.0-plus",
-        "lgpl-2.1-plus",
-        "newlib-historical",
-        "nilsson-historical",
-        "standard-ml-nj",
-        "sunpro",
-        "x11-hanson",
-        "x11-lucent"
-      ],
-      "actual": [
-        "amd-historical",
-        "bsd-new",
-        "bsd-new AND other-permissive AND other-copyleft",
-        "bsd-simplified",
-        "bsd-unmodified",
-        "delorie-historical",
-        "hp-1986",
-        "hs-regexp",
-        "intel-osl-1993",
-        "lgpl-2.0-plus",
-        "lgpl-2.1-plus",
-        "newlib-historical",
-        "nilsson-historical",
-        "standard-ml-nj",
-        "sunpro",
-        "warranty-disclaimer",
-        "x11-hanson",
-        "x11-lucent"
-      ],
-      "exact_expected": [
-        "amd-historical",
-        "bsd-new",
-        "bsd-new AND other-permissive AND other-copyleft",
-        "bsd-simplified",
-        "bsd-unmodified",
-        "delorie-historical",
-        "hp-1986",
-        "hs-regexp",
-        "intel-osl-1993",
-        "lgpl-2.0-plus",
-        "lgpl-2.1-plus",
-        "newlib-historical",
-        "nilsson-historical",
-        "standard-ml-nj",
-        "sunpro",
-        "x11-hanson",
-        "x11-lucent"
-      ],
-      "stage": "filter-retained",
-      "note": "won't-fix exact core: the filter retained 1 unexpected expression(s)"
-    },
-    {
-      "path": "datadriven/lic2/newlib/newlib_license_12.txt",
-      "expected": [
-        "amd-historical"
-      ],
-      "actual": [
-        "warranty-disclaimer"
-      ],
-      "stage": "wrong-exact-rule-set",
-      "note": "won't-fix exact core: 1 expected expression(s) missing and 1 unexpected exact expression(s) present"
-    },
-    {
       "path": "datadriven/lic2/newlib/newlib_license_21.txt",
       "expected": [
         "lgpl-2.1-plus"
@@ -2524,14 +2134,6 @@
       ],
       "exact_expected": [
         "gpl-2.0-plus"
-      ],
-      "stage": "filter-retained",
-      "note": "won't-fix exact core: the filter retained 1 unexpected expression(s)"
-    },
-    {
-      "path": "datadriven/lic3/2484-false-positive-gpl-with-stopwords.txt",
-      "actual": [
-        "gpl-1.0-plus"
       ],
       "stage": "filter-retained",
       "note": "won't-fix exact core: the filter retained 1 unexpected expression(s)"
@@ -2963,21 +2565,6 @@
       "note": "won't-fix exact core: no exact match for 1 expected expression(s)"
     },
     {
-      "path": "datadriven/lic3/mit_and_bsd_thoughtworks.java",
-      "expected": [
-        "bsd-new",
-        "mit"
-      ],
-      "actual": [
-        "mit"
-      ],
-      "exact_expected": [
-        "mit"
-      ],
-      "stage": "partial-exact-rule-set",
-      "note": "won't-fix exact core: 1 expected expression(s) had no exact match"
-    },
-    {
       "path": "datadriven/lic3/mit_and_pdl.html",
       "expected": [
         "apache-2.0",
@@ -3040,18 +2627,6 @@
       "actual": [
         "mpl-1.0",
         "mpl-1.1"
-      ],
-      "stage": "wrong-exact-rule-set",
-      "note": "won't-fix exact core: 1 expected expression(s) missing and 2 unexpected exact expression(s) present"
-    },
-    {
-      "path": "datadriven/lic3/no_license_28.txt",
-      "expected": [
-        "historical"
-      ],
-      "actual": [
-        "other-permissive",
-        "warranty-disclaimer"
       ],
       "stage": "wrong-exact-rule-set",
       "note": "won't-fix exact core: 1 expected expression(s) missing and 2 unexpected exact expression(s) present"
@@ -3278,15 +2853,14 @@
       ],
       "actual": [
         "gpl-1.0-plus",
-        "gpl-2.0-plus",
         "lgpl-2.0-plus",
-        "lgpl-2.1-plus",
         "mpl-1.0",
+        "mpl-1.1 OR gpl-2.0-plus OR lgpl-2.1-plus",
         "mpl-2.0 OR gpl-2.0",
         "unknown-license-reference"
       ],
       "stage": "wrong-exact-rule-set",
-      "note": "won't-fix exact core: 1 expected expression(s) missing and 7 unexpected exact expression(s) present"
+      "note": "won't-fix exact core: 1 expected expression(s) missing and 6 unexpected exact expression(s) present"
     },
     {
       "path": "datadriven/lic4/gpl-2.0-plus_and_mpl-1.0.txt",
@@ -3356,51 +2930,6 @@
       ],
       "stage": "wrong-exact-rule-set",
       "note": "won't-fix exact core: 1 expected expression(s) missing and 1 unexpected exact expression(s) present"
-    },
-    {
-      "path": "datadriven/lic4/gplv2+ce.html",
-      "expected": [
-        "gpl-2.0 WITH classpath-exception-2.0"
-      ],
-      "actual": [
-        "classpath-exception-2.0",
-        "generic-exception",
-        "gpl-1.0-plus",
-        "gpl-2.0",
-        "gpl-2.0 WITH classpath-exception-2.0",
-        "gpl-2.0-plus",
-        "lgpl-2.0-plus",
-        "oracle-openjdk-classpath-exception-2.0",
-        "other-copyleft",
-        "proprietary-license",
-        "unknown-license-reference",
-        "warranty-disclaimer"
-      ],
-      "exact_expected": [
-        "gpl-2.0 WITH classpath-exception-2.0"
-      ],
-      "stage": "filter-retained",
-      "note": "won't-fix exact core: the filter retained 11 unexpected expression(s)"
-    },
-    {
-      "path": "datadriven/lic4/gu.md",
-      "expected": [
-        "bsd-new",
-        "historical",
-        "mit"
-      ],
-      "actual": [
-        "bsd-new",
-        "mit",
-        "other-permissive",
-        "warranty-disclaimer"
-      ],
-      "exact_expected": [
-        "bsd-new",
-        "mit"
-      ],
-      "stage": "wrong-exact-rule-set",
-      "note": "won't-fix exact core: 1 expected expression(s) missing and 2 unexpected exact expression(s) present"
     },
     {
       "path": "datadriven/lic4/hs-regexp_and_proprietary_and_x11-opengroup.txt",
@@ -3575,42 +3104,6 @@
       ],
       "stage": "wrong-exact-rule-set",
       "note": "won't-fix exact core: 1 expected expression(s) missing and 4 unexpected exact expression(s) present"
-    },
-    {
-      "path": "datadriven/lic4/openjdk-assembly-exception.html",
-      "expected": [
-        "gpl-2.0 WITH classpath-exception-2.0",
-        "openjdk-exception"
-      ],
-      "actual": [
-        "generic-exception",
-        "gpl-1.0-plus",
-        "gpl-2.0",
-        "gpl-2.0 WITH classpath-exception-2.0"
-      ],
-      "exact_expected": [
-        "gpl-2.0 WITH classpath-exception-2.0"
-      ],
-      "stage": "wrong-exact-rule-set",
-      "note": "won't-fix exact core: 1 expected expression(s) missing and 3 unexpected exact expression(s) present"
-    },
-    {
-      "path": "datadriven/lic4/openjdk-binary-license-2007-08-02.html",
-      "expected": [
-        "gpl-2.0 WITH classpath-exception-2.0",
-        "sun-bcl-openjdk"
-      ],
-      "actual": [
-        "gpl-2.0",
-        "gpl-2.0 WITH classpath-exception-2.0",
-        "sun-bcl-openjdk"
-      ],
-      "exact_expected": [
-        "gpl-2.0 WITH classpath-exception-2.0",
-        "sun-bcl-openjdk"
-      ],
-      "stage": "filter-retained",
-      "note": "won't-fix exact core: the filter retained 1 unexpected expression(s)"
     },
     {
       "path": "datadriven/lic4/openssh.LICENSE",
@@ -3931,21 +3424,6 @@
       "note": "won't-fix exact core: no exact match for 1 expected expression(s)"
     },
     {
-      "path": "datadriven/lic4/ruby.txt",
-      "expected": [
-        "ruby"
-      ],
-      "actual": [
-        "ruby",
-        "unknown-license-reference"
-      ],
-      "exact_expected": [
-        "ruby"
-      ],
-      "stage": "filter-retained",
-      "note": "won't-fix exact core: the filter retained 1 unexpected expression(s)"
-    },
-    {
       "path": "datadriven/lic4/should_detect_something.html",
       "expected": [
         "apache-2.0",
@@ -3956,7 +3434,8 @@
         "apache-2.0",
         "mit",
         "sun-sissl-1.1",
-        "unknown-license-reference"
+        "unknown-license-reference",
+        "warranty-disclaimer"
       ],
       "exact_expected": [
         "apache-2.0",
@@ -3964,7 +3443,7 @@
         "sun-sissl-1.1"
       ],
       "stage": "filter-retained",
-      "note": "won't-fix exact core: the filter retained 1 unexpected expression(s)"
+      "note": "won't-fix exact core: the filter retained 2 unexpected expression(s)"
     },
     {
       "path": "datadriven/lic4/should_detect_something_4.pdf",
@@ -4199,32 +3678,6 @@
       ],
       "stage": "filter-retained",
       "note": "won't-fix exact core: the filter retained 2 unexpected expression(s)"
-    },
-    {
-      "path": "datadriven/lic4/utf8_copyright.htm",
-      "expected": [
-        "boost-1.0"
-      ],
-      "actual": [
-        "unknown-license-reference"
-      ],
-      "stage": "wrong-exact-rule-set",
-      "note": "won't-fix exact core: 1 expected expression(s) missing and 1 unexpected exact expression(s) present"
-    },
-    {
-      "path": "datadriven/lic4/w3c_1.txt",
-      "expected": [
-        "w3c-software-19980720"
-      ],
-      "actual": [
-        "w3c",
-        "w3c-software-19980720"
-      ],
-      "exact_expected": [
-        "w3c-software-19980720"
-      ],
-      "stage": "filter-retained",
-      "note": "won't-fix exact core: the filter retained 1 unexpected expression(s)"
     },
     {
       "path": "datadriven/lic4/x11_danse.txt",

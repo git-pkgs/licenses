@@ -143,7 +143,11 @@ func verifyCheckout(root, wantCommit string) error {
 	}
 
 	dataPath := filepath.Join("src", "licensedcode", "data")
-	command = exec.Command("git", "-C", root, "status", "--porcelain", "--untracked-files=all", "--", dataPath)
+	stopwordsPath := filepath.Join("src", "licensedcode", "stopwords.py")
+	command = exec.Command(
+		"git", "-C", root, "status", "--porcelain", "--untracked-files=all", "--",
+		dataPath, stopwordsPath,
+	)
 	output, err = command.Output()
 	if err != nil {
 		return fmt.Errorf("check ScanCode corpus status: %w", err)
@@ -156,6 +160,10 @@ func verifyCheckout(root, wantCommit string) error {
 
 func buildIndex(root string, version sourceVersion) (corpus.Index, error) {
 	dataRoot := filepath.Join(root, "src", "licensedcode", "data")
+	stopwords, err := loadStopwords(filepath.Join(root, "src", "licensedcode", "stopwords.py"))
+	if err != nil {
+		return corpus.Index{}, err
+	}
 	licensesDirectory := filepath.Join(dataRoot, "licenses")
 	licenses, err := loadDirectory(licensesDirectory, ".LICENSE", true)
 	if err != nil {
@@ -180,16 +188,32 @@ func buildIndex(root string, version sourceVersion) (corpus.Index, error) {
 	for index := range records {
 		texts[index] = records[index].Text
 	}
-	vocabulary, err := tokenize.NewVocabulary(texts)
+	vocabulary, err := tokenize.NewVocabularyWithStopwords(texts, stopwords)
 	if err != nil {
 		return corpus.Index{}, fmt.Errorf("build vocabulary: %w", err)
 	}
+	stopwordIDs := make([]uint32, len(stopwords))
+	for index, word := range stopwords {
+		id, exists := vocabulary.Lookup(word)
+		if !exists {
+			return corpus.Index{}, fmt.Errorf("stopword %q is absent from vocabulary", word)
+		}
+		stopwordIDs[index] = uint32(id)
+	}
+	slices.Sort(stopwordIDs)
 	patterns := make([]aho.Pattern, 0, len(records))
 	for index := range records {
-		tokens := vocabulary.Tokenize(records[index].Text)
+		tokens := vocabulary.TokenizeIDs(records[index].Text)
 		records[index].Tokens = make([]uint32, len(tokens.IDs))
 		for position, id := range tokens.IDs {
 			records[index].Tokens[position] = uint32(id)
+		}
+		if records[index].Flags&(corpus.FlagContinuous|corpus.FlagRequiredPhrase) != 0 {
+			for _, after := range tokens.StopwordAfter {
+				if after > 0 && uint64(after) < uint64(len(tokens.IDs)) {
+					records[index].StopwordAfter = append(records[index].StopwordAfter, after)
+				}
+			}
 		}
 		records[index].Text = nil
 		if len(records[index].Tokens) != 0 {
@@ -210,11 +234,81 @@ func buildIndex(root string, version sourceVersion) (corpus.Index, error) {
 			SourceCommit: version.Commit,
 		},
 		Vocabulary:   vocabulary.Words(),
+		StopwordIDs:  stopwordIDs,
 		Rules:        records,
 		Automaton:    automaton,
 		SPDXKeys:     spdxKeys,
 		ReportingIDs: reportingIDs,
 	}, nil
+}
+
+func loadStopwords(path string) ([]string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read ScanCode stopwords: %w", err)
+	}
+
+	const declaration = "STOPWORDS = frozenset({"
+	var stopwords []string
+	inside := false
+	closed := false
+	for lineNumber, raw := range strings.Split(string(data), "\n") {
+		line := strings.TrimSpace(raw)
+		if !inside {
+			if line == declaration {
+				inside = true
+			}
+			continue
+		}
+		if line == "})" {
+			closed = true
+			break
+		}
+		words, err := parseStopwordLine(path, lineNumber+1, line)
+		if err != nil {
+			return nil, err
+		}
+		stopwords = append(stopwords, words...)
+	}
+	if !inside || !closed {
+		return nil, fmt.Errorf("%s: incomplete STOPWORDS declaration", path)
+	}
+	if len(stopwords) == 0 {
+		return nil, fmt.Errorf("%s: empty STOPWORDS declaration", path)
+	}
+	slices.Sort(stopwords)
+	for index, word := range stopwords {
+		if index > 0 && stopwords[index-1] == word {
+			return nil, fmt.Errorf("%s: duplicate stopword %q", path, word)
+		}
+		words := tokenize.Words([]byte(word))
+		if len(words) != 1 || words[0].Text != word || words[0].Start != 0 || words[0].End != len(word) {
+			return nil, fmt.Errorf("%s: invalid normalized stopword %q", path, word)
+		}
+	}
+	return stopwords, nil
+}
+
+func parseStopwordLine(path string, lineNumber int, line string) ([]string, error) {
+	var stopwords []string
+	for line != "" && !strings.HasPrefix(line, "#") {
+		if line[0] != '\'' {
+			return nil, fmt.Errorf("%s:%d: expected single-quoted stopword", path, lineNumber)
+		}
+		end := strings.IndexByte(line[1:], '\'')
+		if end < 0 {
+			return nil, fmt.Errorf("%s:%d: unterminated stopword", path, lineNumber)
+		}
+		end++
+		word := line[1:end]
+		rest := strings.TrimSpace(line[end+1:])
+		if !strings.HasPrefix(rest, ",") {
+			return nil, fmt.Errorf("%s:%d: stopword must end with a comma", path, lineNumber)
+		}
+		stopwords = append(stopwords, word)
+		line = strings.TrimSpace(rest[1:])
+	}
+	return stopwords, nil
 }
 
 // loadSPDXMappings builds maps between ScanCode keys and SPDX identifiers from

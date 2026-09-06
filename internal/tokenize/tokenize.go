@@ -34,14 +34,15 @@ type Tokens struct {
 	Offsets []Offset
 }
 
-// IDTokens contains known token IDs, unknown-word positions, and the byte range
-// spanning the known tokens. UnknownAfter stores the number of known tokens
-// preceding each unknown word.
+// IDTokens contains known token IDs, omitted-word positions, and the byte range
+// spanning the known tokens. UnknownAfter and StopwordAfter store the number of
+// known tokens preceding each omitted word.
 type IDTokens struct {
-	IDs          []ID
-	UnknownAfter []uint32
-	Start        int
-	End          int
+	IDs           []ID
+	UnknownAfter  []uint32
+	StopwordAfter []uint32
+	Start         int
+	End           int
 }
 
 // Word is a normalized word and its byte range in the original input.
@@ -53,19 +54,34 @@ type Word struct {
 
 // Vocabulary is an immutable mapping from normalized words to integer IDs.
 type Vocabulary struct {
-	ids   map[string]ID
-	words []string
+	ids       map[string]ID
+	words     []string
+	stopwords []bool
 }
 
 // NewVocabulary builds a deterministic vocabulary from texts. IDs are assigned
 // in normalized lexical order and start at one, leaving zero for Unknown.
 func NewVocabulary(texts [][]byte) (*Vocabulary, error) {
+	return NewVocabularyWithStopwords(texts, nil)
+}
+
+// NewVocabularyWithStopwords builds a vocabulary that omits stopwords from
+// token sequences while retaining their IDs.
+func NewVocabularyWithStopwords(texts [][]byte, stopwords []string) (*Vocabulary, error) {
 	unique := make(map[string]struct{})
 	var scratch []byte
 	for _, text := range texts {
 		scan(text, func(start, end int) {
 			addNormalized(unique, text[start:end], &scratch)
 		})
+	}
+	for _, word := range stopwords {
+		normalized := Words([]byte(word))
+		if len(normalized) != 1 || normalized[0].Text != word ||
+			normalized[0].Start != 0 || normalized[0].End != len(word) {
+			return nil, fmt.Errorf("tokenize: invalid normalized stopword %q", word)
+		}
+		unique[word] = struct{}{}
 	}
 
 	words := make([]string, 0, len(unique))
@@ -76,11 +92,28 @@ func NewVocabulary(texts [][]byte) (*Vocabulary, error) {
 	if uint64(len(words)) >= uint64(^ID(0)) {
 		return nil, fmt.Errorf("tokenize: %d words exceed the ID space", len(words))
 	}
-	return newVocabulary(words), nil
+	vocabulary := newVocabulary(words)
+	for _, word := range stopwords {
+		id, exists := vocabulary.ids[word]
+		if !exists || id == Unknown {
+			return nil, fmt.Errorf("tokenize: invalid stopword %q", word)
+		}
+		vocabulary.stopwords[id] = true
+	}
+	return vocabulary, nil
 }
 
 // NewVocabularyFromWords loads an already normalized and sorted vocabulary.
 func NewVocabularyFromWords(words []string) (*Vocabulary, error) {
+	return NewVocabularyFromWordsWithStopwords(words, nil)
+}
+
+// NewVocabularyFromWordsWithStopwords loads normalized words and marks the
+// one-based IDs in stopwords for omission from token sequences.
+func NewVocabularyFromWordsWithStopwords(
+	words []string,
+	stopwords []uint32,
+) (*Vocabulary, error) {
 	for index, word := range words {
 		if word == "" {
 			return nil, fmt.Errorf("tokenize: vocabulary word %d is empty", index)
@@ -92,7 +125,19 @@ func NewVocabularyFromWords(words []string) (*Vocabulary, error) {
 	if uint64(len(words)) >= uint64(^ID(0)) {
 		return nil, fmt.Errorf("tokenize: %d words exceed the ID space", len(words))
 	}
-	return newVocabulary(slices.Clone(words)), nil
+	vocabulary := newVocabulary(slices.Clone(words))
+	var previous uint32
+	for index, rawID := range stopwords {
+		if rawID == 0 || uint64(rawID) > uint64(len(words)) {
+			return nil, fmt.Errorf("tokenize: invalid stopword ID %d", rawID)
+		}
+		if index > 0 && rawID <= previous {
+			return nil, fmt.Errorf("tokenize: stopword IDs are not strictly sorted at %d", rawID)
+		}
+		vocabulary.stopwords[ID(rawID)] = true
+		previous = rawID
+	}
+	return vocabulary, nil
 }
 
 func newVocabulary(words []string) *Vocabulary {
@@ -103,7 +148,11 @@ func newVocabulary(words []string) *Vocabulary {
 		ids[word] = id
 		byID[id] = word
 	}
-	return &Vocabulary{ids: ids, words: byID}
+	return &Vocabulary{
+		ids:       ids,
+		words:     byID,
+		stopwords: make([]bool, len(byID)),
+	}
 }
 
 // Len returns the number of known words, excluding Unknown.
@@ -138,6 +187,9 @@ func (v *Vocabulary) Tokenize(input []byte) Tokens {
 	var scratch []byte
 	scan(input, func(start, end int) {
 		id := v.lookup(input[start:end], &scratch)
+		if v.stopwords[id] {
+			return
+		}
 		ids = append(ids, id)
 		offsets = append(offsets, Offset{Start: start, End: end})
 	})
@@ -148,19 +200,24 @@ func (v *Vocabulary) Tokenize(input []byte) Tokens {
 // the first through last known token without retaining every token offset.
 func (v *Vocabulary) TokenizeIDs(input []byte) IDTokens {
 	capacity := min(len(input)/averageWordBytes, maximumInitialTokenCapacity)
-	return v.TokenizeIDsAppend(input, make([]ID, 0, capacity), nil, nil)
+	return v.TokenizeIDsAppend(input, make([]ID, 0, capacity), nil, nil, nil)
 }
 
 // TokenizeIDsAppend is TokenizeIDs writing into ids[:0] and
-// unknownAfter[:0]. wordScratch, when provided, is reused for case
+// the position buffers. wordScratch, when provided, is reused for case
 // normalization and may be grown.
 func (v *Vocabulary) TokenizeIDsAppend(
 	input []byte,
 	ids []ID,
 	unknownAfter []uint32,
+	stopwordAfter []uint32,
 	wordScratch *[]byte,
 ) IDTokens {
-	result := IDTokens{IDs: ids[:0], UnknownAfter: unknownAfter[:0]}
+	result := IDTokens{
+		IDs:           ids[:0],
+		UnknownAfter:  unknownAfter[:0],
+		StopwordAfter: stopwordAfter[:0],
+	}
 	var local []byte
 	if wordScratch == nil {
 		wordScratch = &local
@@ -169,6 +226,10 @@ func (v *Vocabulary) TokenizeIDsAppend(
 		id := v.lookup(input[start:end], wordScratch)
 		if id == Unknown {
 			result.UnknownAfter = append(result.UnknownAfter, uint32(len(result.IDs)))
+			return
+		}
+		if v.stopwords[id] {
+			result.StopwordAfter = append(result.StopwordAfter, uint32(len(result.IDs)))
 			return
 		}
 		if len(result.IDs) == 0 {
@@ -196,18 +257,25 @@ func TokenOffsetsAppend(input []byte, offsets []Offset) []Offset {
 }
 
 // KnownTokenOffsetsAppend returns byte ranges for known words using the
-// unknown-word positions returned by TokenizeIDsAppend.
+// omitted-word positions returned by TokenizeIDsAppend.
 func KnownTokenOffsetsAppend(
 	input []byte,
 	unknownAfter []uint32,
+	stopwordAfter []uint32,
 	offsets []Offset,
 ) []Offset {
 	offsets = offsets[:0]
 	unknownIndex := 0
+	stopwordIndex := 0
 	scan(input, func(start, end int) {
 		if unknownIndex < len(unknownAfter) &&
 			unknownAfter[unknownIndex] == uint32(len(offsets)) {
 			unknownIndex++
+			return
+		}
+		if stopwordIndex < len(stopwordAfter) &&
+			stopwordAfter[stopwordIndex] == uint32(len(offsets)) {
+			stopwordIndex++
 			return
 		}
 		offsets = append(offsets, Offset{Start: start, End: end})

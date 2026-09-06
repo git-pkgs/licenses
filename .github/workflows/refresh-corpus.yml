@@ -31,6 +31,7 @@ jobs:
           persist-credentials: false
           sparse-checkout: |
             pyproject-licensedcode-data.toml
+            src/licensedcode/stopwords.py
             src/licensedcode/data/licenses
             src/licensedcode/data/rules
             tests/licensedcode/data/datadriven/lic1
