@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"slices"
 	"strings"
 	"sync"
@@ -409,6 +410,96 @@ func TestMatcherSuppressesFalsePositiveRules(t *testing.T) {
 	}
 	if len(result.Detections) != 0 || len(result.Clues) != 0 {
 		t.Fatalf("result = %#v", result)
+	}
+}
+
+func TestMatcherSuppressesLicenseClassifierList(t *testing.T) {
+	t.Parallel()
+
+	input, err := os.ReadFile("testdata/license-classifiers.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	matcher, err := New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := matcher.Match(context.Background(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Detections) != 0 || len(result.Clues) != 0 {
+		t.Fatalf("result = %#v", result)
+	}
+}
+
+func TestMatcherKeepsSparseLicenseClassifierMatches(t *testing.T) {
+	t.Parallel()
+
+	input, err := os.ReadFile("testdata/license-classifiers.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	separator := []byte("\n" + strings.Repeat("projectword ", 11))
+	input = bytes.ReplaceAll(input, []byte("\n"), separator)
+	matcher, err := New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := matcher.Match(context.Background(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Detections) == 0 && len(result.Clues) == 0 {
+		t.Fatal("sparse license evidence was suppressed")
+	}
+}
+
+func TestMatcherKeepsClassifierSectionInsideLongDocument(t *testing.T) {
+	t.Parallel()
+
+	classifiers, err := os.ReadFile("testdata/license-classifiers.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	filler := []byte(strings.Repeat(" projectwordone", 500))
+	matcher, err := New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name  string
+		input []byte
+	}{
+		{name: "leading text", input: append(slices.Clone(filler), classifiers...)},
+		{name: "trailing text", input: append(slices.Clone(classifiers), filler...)},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			result, err := matcher.Match(context.Background(), test.input)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(result.Detections) == 0 && len(result.Clues) == 0 {
+				t.Fatal("license evidence in a longer document was suppressed")
+			}
+		})
+	}
+}
+
+func TestMatcherKeepsRepeatedLicenseClues(t *testing.T) {
+	t.Parallel()
+
+	matcher := testMatcher(t, false)
+	result, err := matcher.Match(
+		context.Background(),
+		[]byte(strings.Repeat("clue\n", minimumLicenseListMatches)),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Clues) != minimumLicenseListMatches {
+		t.Fatalf("clues = %d, want %d", len(result.Clues), minimumLicenseListMatches)
 	}
 }
 
