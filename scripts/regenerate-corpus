@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Regenerate internal/corpus/corpus.bin.gz and CORPUS_SHA256 from the ScanCode
+# commit pinned in CORPUS_VERSION.
+#
+# Usage: scripts/regenerate-corpus [/path/to/scancode-toolkit]
+#
+# The path should be a scancode-toolkit source tree at the pinned commit. It
+# defaults to .scancode in the repository root, matching CI. If the path is a
+# git checkout on a different commit, a temporary detached worktree at the
+# pinned commit is created for the run and removed afterwards.
+
+repo_root=$(cd "$(dirname "$0")/.." && pwd)
+cd "$repo_root"
+
+scancode=${1:-"$repo_root/.scancode"}
+if [[ ! -d "$scancode" ]]; then
+  echo "regenerate-corpus: scancode source tree not found at $scancode" >&2
+  echo "usage: $0 /path/to/scancode-toolkit" >&2
+  exit 2
+fi
+
+commit=$(sed -n 's/^commit=//p' CORPUS_VERSION)
+if [[ ! "$commit" =~ ^[0-9a-fA-F]{40}([0-9a-fA-F]{24})?$ ]]; then
+  echo "regenerate-corpus: CORPUS_VERSION does not contain a valid commit" >&2
+  exit 1
+fi
+
+scancode_repo=$scancode
+worktree=
+cleanup() {
+  if [[ -n "$worktree" ]]; then
+    git -C "$scancode_repo" worktree remove --force "$worktree" 2>/dev/null || rm -rf "$worktree"
+  fi
+}
+trap cleanup EXIT
+
+if head=$(git -C "$scancode_repo" rev-parse HEAD 2>/dev/null); then
+  if [[ "$head" != "$commit" ]]; then
+    if ! git -C "$scancode_repo" cat-file -e "$commit^{commit}" 2>/dev/null; then
+      echo "regenerate-corpus: fetching $commit" >&2
+      git -C "$scancode_repo" fetch --quiet origin "$commit"
+    fi
+    worktree=$(mktemp -d)
+    git -C "$scancode_repo" worktree add --quiet --detach "$worktree" "$commit"
+    scancode=$worktree
+  fi
+else
+  echo "regenerate-corpus: $scancode is not a git checkout; cannot verify it matches $commit" >&2
+fi
+
+go run ./cmd/corpusgen \
+  -scancode "$scancode" \
+  -version-file CORPUS_VERSION \
+  -output internal/corpus/corpus.bin.gz
+
+corpus_hash() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1"
+  else
+    shasum -a 256 "$1"
+  fi | cut -d' ' -f1
+}
+
+corpus_hash internal/corpus/corpus.bin.gz > CORPUS_SHA256
+echo "regenerate-corpus: wrote internal/corpus/corpus.bin.gz ($(cat CORPUS_SHA256))" >&2

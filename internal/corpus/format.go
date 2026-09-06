@@ -15,7 +15,7 @@ import (
 )
 
 // FormatVersion is the on-disk corpus index format.
-const FormatVersion = 6
+const FormatVersion = 7
 
 const (
 	FlagLicenseText      uint16 = 1 << 1
@@ -801,7 +801,7 @@ func readTerminalHeads(r *bufio.Reader, nodeCount int) ([]uint32, error) {
 		if err != nil {
 			return nil, fmt.Errorf("corpus: read terminal node delta: %w", err)
 		}
-		if delta == 0 || previous+delta > uint64(nodeCount) {
+		if delta == 0 || delta > uint64(nodeCount)-previous {
 			return nil, errors.New("corpus: invalid terminal node delta")
 		}
 		current := previous + delta
