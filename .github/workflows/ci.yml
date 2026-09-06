@@ -76,6 +76,7 @@ jobs:
           path: .scancode
           persist-credentials: false
           sparse-checkout: |
+            src/licensedcode/stopwords.py
             src/licensedcode/data/licenses
             src/licensedcode/data/rules
             tests/licensedcode/data/datadriven/lic1

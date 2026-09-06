@@ -24,14 +24,16 @@ func TestRoundTrip(t *testing.T) {
 			RuleCount:    2,
 			SourceCommit: "0123456789abcdef",
 		},
-		Vocabulary: []string{"apache", "license", "permission", "zlib"},
+		Vocabulary:  []string{"apache", "license", "permission", "zlib"},
+		StopwordIDs: []uint32{2},
 		Rules: []Rule{
 			{
-				ID:         "a.LICENSE",
-				Expression: "apache-2.0",
-				Tokens:     []uint32{1, 2},
-				Flags:      FlagLicenseText,
-				Relevance:  100,
+				ID:            "a.LICENSE",
+				Expression:    "apache-2.0",
+				Tokens:        []uint32{1, 2},
+				StopwordAfter: []uint32{1, 1},
+				Flags:         FlagLicenseText,
+				Relevance:     100,
 			},
 			{
 				ID:         "z.RULE",
@@ -81,8 +83,14 @@ func TestRoundTrip(t *testing.T) {
 	if !slices.Equal(z.Tokens, []uint32{3, 4}) {
 		t.Fatalf("tokens = %#v", z.Tokens)
 	}
+	if !slices.Equal(got.Rules[0].StopwordAfter, []uint32{1, 1}) {
+		t.Fatalf("rule stopword positions = %#v", got.Rules[0].StopwordAfter)
+	}
 	if !slices.Equal(got.Vocabulary, index.Vocabulary) {
 		t.Fatalf("vocabulary = %#v", got.Vocabulary)
+	}
+	if !slices.Equal(got.StopwordIDs, index.StopwordIDs) {
+		t.Fatalf("stopword IDs = %#v", got.StopwordIDs)
 	}
 	if err := got.Automaton.Validate(2); err != nil {
 		t.Fatal(err)
@@ -149,6 +157,24 @@ func TestWriteRejectsWrongRuleCount(t *testing.T) {
 	}
 	if err := Write(&bytes.Buffer{}, index); err == nil {
 		t.Fatal("Write accepted an incorrect rule count")
+	}
+}
+
+func TestWriteRejectsInvalidRuleStopwordPosition(t *testing.T) {
+	t.Parallel()
+
+	index := Index{
+		Info:       Info{Version: "test", SourceCommit: "commit"},
+		Vocabulary: []string{"first", "second"},
+		Rules: []Rule{{
+			ID:            "one.RULE",
+			Expression:    "mit",
+			Tokens:        []uint32{1, 2},
+			StopwordAfter: []uint32{2},
+		}},
+	}
+	if err := Write(&bytes.Buffer{}, index); err == nil {
+		t.Fatal("Write accepted a trailing rule stopword")
 	}
 }
 

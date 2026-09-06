@@ -14,7 +14,7 @@ import (
 )
 
 // FormatVersion is the on-disk corpus index format.
-const FormatVersion = 5
+const FormatVersion = 6
 
 const (
 	FlagLicenseText      uint16 = 1 << 1
@@ -51,20 +51,22 @@ type Info struct {
 
 // Rule is the source data needed to build the matching indexes.
 type Rule struct {
-	ID         string
-	Expression string
-	Text       []byte
-	Tokens     []uint32
-	Flags      uint16
-	Relevance  uint8
+	ID            string
+	Expression    string
+	Text          []byte
+	Tokens        []uint32
+	StopwordAfter []uint32
+	Flags         uint16
+	Relevance     uint8
 }
 
 // Index is a decoded corpus.
 type Index struct {
-	Info       Info
-	Vocabulary []string
-	Rules      []Rule
-	Automaton  aho.Automaton
+	Info        Info
+	Vocabulary  []string
+	StopwordIDs []uint32
+	Rules       []Rule
+	Automaton   aho.Automaton
 	// SPDXKeys maps lowercase SPDX identifiers, and their deprecated aliases,
 	// to ScanCode license keys.
 	SPDXKeys map[string]string
@@ -92,6 +94,10 @@ func Write(w io.Writer, index Index) error {
 		return err
 	}
 	if err := writeStrings(bw, index.Vocabulary); err != nil {
+		_ = zw.Close()
+		return err
+	}
+	if err := writeUint32s(bw, index.StopwordIDs); err != nil {
 		_ = zw.Close()
 		return err
 	}
@@ -155,6 +161,16 @@ func validateIndex(index Index) error {
 			return fmt.Errorf("corpus: vocabulary is not strictly sorted at %q", word)
 		}
 	}
+	var previousStopword uint32
+	for position, stopword := range index.StopwordIDs {
+		if stopword == 0 || uint64(stopword) > uint64(len(index.Vocabulary)) {
+			return fmt.Errorf("corpus: invalid stopword token %d", stopword)
+		}
+		if position > 0 && stopword <= previousStopword {
+			return fmt.Errorf("corpus: stopword tokens are not strictly sorted at %d", stopword)
+		}
+		previousStopword = stopword
+	}
 
 	rules := index.Rules
 	for i, rule := range rules {
@@ -174,6 +190,16 @@ func validateIndex(index Index) error {
 			if token == 0 || uint64(token) > uint64(len(index.Vocabulary)) {
 				return fmt.Errorf("corpus: rule %q has invalid token %d", rule.ID, token)
 			}
+		}
+		var previous uint32
+		for position, after := range rule.StopwordAfter {
+			if after == 0 || uint64(after) >= uint64(len(rule.Tokens)) {
+				return fmt.Errorf("corpus: rule %q has invalid stopword position %d", rule.ID, after)
+			}
+			if position > 0 && after < previous {
+				return fmt.Errorf("corpus: rule %q stopword positions are not sorted at %d", rule.ID, after)
+			}
+			previous = after
 		}
 	}
 	if err := index.Automaton.Validate(len(rules)); err != nil {
@@ -230,7 +256,7 @@ func writeRule(w io.Writer, rule Rule) error {
 	if err := writeUint32s(w, rule.Tokens); err != nil {
 		return err
 	}
-	return nil
+	return writeUint32s(w, rule.StopwordAfter)
 }
 
 func writeUint32s(w io.Writer, values []uint32) error {
@@ -367,6 +393,20 @@ func Read(r io.Reader) (Index, error) {
 			return Index{}, fmt.Errorf("corpus: vocabulary is not strictly sorted at %q", word)
 		}
 	}
+	stopwordIDs, err := readUint32s(br, maxWordCount)
+	if err != nil {
+		return Index{}, fmt.Errorf("corpus: read stopword tokens: %w", err)
+	}
+	var previousStopword uint32
+	for index, stopword := range stopwordIDs {
+		if stopword == 0 || uint64(stopword) > uint64(len(vocabulary)) {
+			return Index{}, fmt.Errorf("corpus: invalid stopword token %d", stopword)
+		}
+		if index > 0 && stopword <= previousStopword {
+			return Index{}, fmt.Errorf("corpus: stopword tokens are not strictly sorted at %d", stopword)
+		}
+		previousStopword = stopword
+	}
 	count, err := readCount(br, maxRuleCount, "rule")
 	if err != nil {
 		return Index{}, err
@@ -384,6 +424,16 @@ func Read(r io.Reader) (Index, error) {
 			if token == 0 || uint64(token) > uint64(len(vocabulary)) {
 				return Index{}, fmt.Errorf("corpus: rule %q has invalid token %d", rules[i].ID, token)
 			}
+		}
+		var previous uint32
+		for position, after := range rules[i].StopwordAfter {
+			if after == 0 || uint64(after) >= uint64(len(rules[i].Tokens)) {
+				return Index{}, fmt.Errorf("corpus: rule %q has invalid stopword position %d", rules[i].ID, after)
+			}
+			if position > 0 && after < previous {
+				return Index{}, fmt.Errorf("corpus: rule %q stopword positions are not sorted at %d", rules[i].ID, after)
+			}
+			previous = after
 		}
 	}
 	automaton, err := readAutomaton(br, count)
@@ -408,6 +458,7 @@ func Read(r io.Reader) (Index, error) {
 	return Index{
 		Info:         info,
 		Vocabulary:   vocabulary,
+		StopwordIDs:  stopwordIDs,
 		Rules:        rules,
 		Automaton:    automaton,
 		SPDXKeys:     spdxKeys,
@@ -489,12 +540,17 @@ func readRule(r *bufio.Reader) (Rule, error) {
 	if err != nil {
 		return Rule{}, err
 	}
+	stopwordAfter, err := readUint32s(r, maxTokenCount)
+	if err != nil {
+		return Rule{}, err
+	}
 	return Rule{
-		ID:         id,
-		Expression: expression,
-		Tokens:     tokens,
-		Flags:      binary.LittleEndian.Uint16(metadata[:2]),
-		Relevance:  metadata[2],
+		ID:            id,
+		Expression:    expression,
+		Tokens:        tokens,
+		StopwordAfter: stopwordAfter,
+		Flags:         binary.LittleEndian.Uint16(metadata[:2]),
+		Relevance:     metadata[2],
 	}, nil
 }
 

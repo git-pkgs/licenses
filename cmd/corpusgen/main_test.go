@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -54,6 +55,10 @@ func TestRunNormalizesUppercaseCommit(t *testing.T) {
 				t.Fatal(err)
 			}
 			if err := os.MkdirAll(filepath.Join(dataRoot, "rules"), directoryMode); err != nil {
+				t.Fatal(err)
+			}
+			stopwords := []byte("STOPWORDS = frozenset({\n    'quot',\n})\n")
+			if err := os.WriteFile(filepath.Join(root, "src", "licensedcode", "stopwords.py"), stopwords, fileMode); err != nil {
 				t.Fatal(err)
 			}
 			if err := os.WriteFile(filepath.Join(root, "README"), []byte("fixture\n"), fileMode); err != nil {
@@ -126,6 +131,44 @@ func TestReadSourceVersionRejectsInvalidCommit(t *testing.T) {
 				t.Fatalf("error = %v, want error containing %q", err, test.wantErr)
 			}
 		})
+	}
+}
+
+func TestLoadStopwords(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "stopwords.py")
+	data := []byte(`before = true
+STOPWORDS = frozenset({
+    # entities
+    'quot',
+    'amp', 'lt',  # multiple values
+})
+after = true
+`)
+	if err := os.WriteFile(path, data, fileMode); err != nil {
+		t.Fatal(err)
+	}
+	got, err := loadStopwords(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"amp", "lt", "quot"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("stopwords = %v, want %v", got, want)
+	}
+}
+
+func TestLoadStopwordsRejectsMalformedEntry(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "stopwords.py")
+	data := []byte("STOPWORDS = frozenset({\n    \"quot\",\n})\n")
+	if err := os.WriteFile(path, data, fileMode); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadStopwords(path); err == nil {
+		t.Fatal("accepted a non-single-quoted stopword")
 	}
 }
 
