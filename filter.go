@@ -9,11 +9,16 @@ import (
 )
 
 const (
-	overlapMedium     = 0.40
-	overlapLarge      = 0.70
-	overlapExtraLarge = 0.90
-	minimumMatchCount = 2
-	filterContextMask = 4095
+	overlapMedium                   = 0.40
+	overlapLarge                    = 0.70
+	overlapExtraLarge               = 0.90
+	minimumMatchCount               = 2
+	filterContextMask               = 4095
+	minimumLicenseListMatches       = 15
+	minimumLicenseListExpressions   = 5
+	maximumLicenseListMatchTokens   = 20
+	maximumLicenseListMatchDistance = 10
+	minimumLicenseListInputCoverage = 0.50
 )
 
 type exactMatch struct {
@@ -398,6 +403,112 @@ func filterFalsePositiveMatches(
 		}
 	}
 	return nil
+}
+
+// Dense lists of short license names describe metadata without granting a license.
+func filterLicenseListMatches(
+	ctx context.Context,
+	engine *matchEngine,
+	matches []exactMatch,
+	unknownAfter, stopwordAfter []uint32,
+	totalWordCount int,
+) ([]exactMatch, error) {
+	if len(matches) < minimumLicenseListMatches {
+		return matches, nil
+	}
+	kept := matches[:0]
+	groupStart := -1
+	flushGroup := func(end int) {
+		if groupStart < 0 {
+			return
+		}
+		group := matches[groupStart:end]
+		spanWords := licenseListSpanWords(group, unknownAfter, stopwordAfter)
+		coverage := float64(spanWords) / float64(totalWordCount)
+		if !isLicenseList(group, engine) || coverage < minimumLicenseListInputCoverage {
+			kept = append(kept, group...)
+		}
+		groupStart = -1
+	}
+	var previous exactMatch
+	for index, match := range matches {
+		if err := checkFilterContext(ctx, index); err != nil {
+			return nil, err
+		}
+		if !isLicenseListCandidate(match, engine) {
+			flushGroup(index)
+			kept = append(kept, match)
+			continue
+		}
+		if groupStart < 0 {
+			groupStart = index
+		} else if licenseListMatchDistance(
+			previous,
+			match,
+			unknownAfter,
+			stopwordAfter,
+		) > maximumLicenseListMatchDistance {
+			flushGroup(index)
+			groupStart = index
+		}
+		previous = match
+	}
+	flushGroup(len(matches))
+	return kept, nil
+}
+
+func isLicenseListCandidate(match exactMatch, engine *matchEngine) bool {
+	const candidateKinds = corpus.FlagLicenseReference |
+		corpus.FlagLicenseTag |
+		corpus.FlagLicenseIntro |
+		corpus.FlagLicenseClue
+	return match.length() <= maximumLicenseListMatchTokens &&
+		engine.rules[match.ruleIndex].Flags&candidateKinds != 0
+}
+
+func isLicenseList(matches []exactMatch, engine *matchEngine) bool {
+	if len(matches) < minimumLicenseListMatches {
+		return false
+	}
+	expressions := make(map[string]struct{}, minimumLicenseListExpressions)
+	for _, match := range matches {
+		expressions[engine.rules[match.ruleIndex].Expression] = struct{}{}
+	}
+	return len(expressions) >= minimumLicenseListExpressions
+}
+
+func licenseListMatchDistance(
+	previous, current exactMatch,
+	unknownAfter, stopwordAfter []uint32,
+) int {
+	start := uint32(previous.tokenEnd)
+	end := uint32(current.tokenStart)
+	return current.tokenStart - previous.tokenEnd + 1 +
+		positionsBetween(unknownAfter, start, end) +
+		positionsBetween(stopwordAfter, start, end)
+}
+
+func licenseListSpanWords(
+	matches []exactMatch,
+	unknownAfter, stopwordAfter []uint32,
+) int {
+	start := uint32(matches[0].tokenStart)
+	end := uint32(matches[len(matches)-1].tokenEnd)
+	return int(end-start) +
+		positionsWithin(unknownAfter, start, end) +
+		positionsWithin(stopwordAfter, start, end)
+}
+
+func positionsBetween(positions []uint32, start, end uint32) int {
+	from, _ := slices.BinarySearch(positions, start)
+	to, _ := slices.BinarySearch(positions, end+1)
+	return to - from
+}
+
+func positionsWithin(positions []uint32, start, end uint32) int {
+	from, _ := slices.BinarySearch(positions, start+1)
+	to, _ := slices.BinarySearch(positions, end)
+	return to - from
 }
 
 func compactExactMatches(matches []exactMatch, states []exactMatchState) []exactMatch {

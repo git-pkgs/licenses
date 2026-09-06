@@ -417,6 +417,20 @@ func (m *Matcher) match(ctx context.Context, b []byte, filters exactFilterOption
 	if err != nil {
 		return Result{}, err
 	}
+	if filters.falsePositive && method == Exact &&
+		len(candidates) >= minimumLicenseListMatches {
+		candidates, err = filterLicenseListMatches(
+			ctx,
+			m.engine,
+			candidates,
+			tokens.UnknownAfter,
+			tokens.StopwordAfter,
+			len(tokens.IDs)+len(tokens.UnknownAfter)+len(tokens.StopwordAfter),
+		)
+		if err != nil {
+			return Result{}, err
+		}
+	}
 	if len(candidates) != 0 && method == Exact && offsets == nil {
 		if cap(scratch.offsets) < len(tokens.IDs) {
 			scratch.offsets = make([]tokenize.Offset, 0, len(tokens.IDs))
