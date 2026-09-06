@@ -1078,7 +1078,7 @@ func makeMatchRecord(match Match) matchRecord {
 }
 
 func applyScanPolicy(path string, input []byte, result *Result) {
-	if len(LegalFileRoles(path)) != 0 {
+	if IsLegalPath(path) {
 		return
 	}
 
@@ -1214,17 +1214,44 @@ func isListItem(line []byte) bool {
 
 // LegalFileRoles classifies a path as a license, notice, both, or neither.
 func LegalFileRoles(filePath string) []string {
+	licenseRole, noticeRole := legalFileRoleFlags(filePath)
+	roles := make([]string, 0, legalRoleCount)
+	if licenseRole {
+		roles = append(roles, "license")
+	}
+	if noticeRole {
+		roles = append(roles, "notice")
+	}
+	return roles
+}
+
+// IsLegalPath reports whether a path has a license or notice role.
+func IsLegalPath(filePath string) bool {
+	licenseRole, noticeRole := legalFileRoleFlags(filePath)
+	return licenseRole || noticeRole
+}
+
+func legalFileRoleFlags(filePath string) (bool, bool) {
 	cleaned := filepath.ToSlash(filePath)
-	parts := strings.Split(cleaned, "/")
 	licenseRole := false
-	for _, directory := range parts[:len(parts)-1] {
-		switch strings.ToLower(directory) {
-		case "license", "licenses", "licence", "licences":
-			licenseRole = true
+	base := strings.LastIndexByte(cleaned, '/') + 1
+	for start := 0; start < base-1; {
+		end := strings.IndexByte(cleaned[start:base-1], '/')
+		if end < 0 {
+			end = base - 1 - start
 		}
+		directory := cleaned[start : start+end]
+		if strings.EqualFold(directory, "license") ||
+			strings.EqualFold(directory, "licenses") ||
+			strings.EqualFold(directory, "licence") ||
+			strings.EqualFold(directory, "licences") {
+			licenseRole = true
+			break
+		}
+		start += end + 1
 	}
 
-	name := strings.ToLower(pathpkg.Base(cleaned))
+	name := pathpkg.Base(cleaned)
 	noticeRole := hasLegalNamePrefix(name, "notices") ||
 		hasLegalNamePrefix(name, "notice")
 	for _, prefix := range []string{
@@ -1243,22 +1270,15 @@ func LegalFileRoles(filePath string) []string {
 		}
 	}
 
-	roles := make([]string, 0, legalRoleCount)
-	if licenseRole {
-		roles = append(roles, "license")
-	}
-	if noticeRole {
-		roles = append(roles, "notice")
-	}
-	return roles
+	return licenseRole, noticeRole
 }
 
 func hasLegalNamePrefix(name, prefix string) bool {
-	if name == prefix {
-		return true
-	}
-	if !strings.HasPrefix(name, prefix) {
+	if len(name) < len(prefix) || !strings.EqualFold(name[:len(prefix)], prefix) {
 		return false
+	}
+	if len(name) == len(prefix) {
+		return true
 	}
 	switch name[len(prefix)] {
 	case '.', '-', '_':

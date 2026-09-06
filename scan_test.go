@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"os"
+	pathpkg "path"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -1152,6 +1153,7 @@ func TestLegalFileRoles(t *testing.T) {
 		{path: "LICENSE", want: []string{"license"}},
 		{path: "copying.txt", want: []string{"license"}},
 		{path: "NOTICES.md", want: []string{"notice"}},
+		{path: "NOTICE./", want: []string{"notice"}},
 		{path: "licenses/component.txt", want: []string{"license"}},
 		{path: "LICENSES/NOTICE.txt", want: []string{"license", "notice"}},
 		{path: "src/source.go", want: []string{}},
@@ -1164,6 +1166,112 @@ func TestLegalFileRoles(t *testing.T) {
 		if got == nil {
 			t.Errorf("LegalFileRoles(%q) returned nil, want an empty or populated array", test.path)
 		}
+		if got := IsLegalPath(test.path); got != (len(test.want) != 0) {
+			t.Errorf("IsLegalPath(%q) = %t, want %t", test.path, got, len(test.want) != 0)
+		}
+	}
+}
+
+func BenchmarkLegalFileRoles(b *testing.B) {
+	paths := []string{
+		"src/github.com/example/project/internal/parser/source.go",
+		"vendor/github.com/example/project/LICENSE.txt",
+		"third_party/component/licenses/dependency.txt",
+		"NOTICE",
+	}
+	for b.Loop() {
+		for _, path := range paths {
+			_ = LegalFileRoles(path)
+		}
+	}
+}
+
+func BenchmarkIsLegalPath(b *testing.B) {
+	paths := []string{
+		"src/github.com/example/project/internal/parser/source.go",
+		"vendor/github.com/example/project/LICENSE.txt",
+		"third_party/component/licenses/dependency.txt",
+		"NOTICE",
+	}
+	for b.Loop() {
+		for _, path := range paths {
+			_ = IsLegalPath(path)
+		}
+	}
+}
+
+func FuzzLegalFileRolesEquivalent(f *testing.F) {
+	for _, path := range []string{
+		"LICENSE",
+		"vendor/project/Notices.md",
+		"src/licenses/component.go",
+		"LICENCE-old",
+		"license.rs",
+		"copyingx",
+		"dir//NOTICE_txt",
+		"\xff/LICENSE.txt",
+	} {
+		f.Add(path)
+	}
+	f.Fuzz(func(t *testing.T, path string) {
+		for i := 0; i < len(path); i++ {
+			if path[i] >= 0x80 {
+				return // EqualFold and ToLower diverge on some non-ASCII fold cases
+			}
+		}
+		want := referenceLegalFileRoles(path)
+		if got := LegalFileRoles(path); !slices.Equal(got, want) {
+			t.Fatalf("LegalFileRoles(%q) = %#v, want %#v", path, got, want)
+		}
+		if got := IsLegalPath(path); got != (len(want) != 0) {
+			t.Fatalf("IsLegalPath(%q) = %t, want %t", path, got, len(want) != 0)
+		}
+	})
+}
+
+func referenceLegalFileRoles(filePath string) []string {
+	cleaned := filepath.ToSlash(filePath)
+	parts := strings.Split(cleaned, "/")
+	licenseRole := false
+	for _, directory := range parts[:len(parts)-1] {
+		switch strings.ToLower(directory) {
+		case "license", "licenses", "licence", "licences":
+			licenseRole = true
+		}
+	}
+	name := strings.ToLower(pathpkg.Base(cleaned))
+	noticeRole := referenceLegalNamePrefix(name, "notices") ||
+		referenceLegalNamePrefix(name, "notice")
+	for _, prefix := range []string{
+		"licenses", "license", "licences", "licence", "copying", "mit-license", "copyright", "unlicense",
+	} {
+		if referenceLegalNamePrefix(name, prefix) {
+			licenseRole = true
+			break
+		}
+	}
+	roles := make([]string, 0, legalRoleCount)
+	if licenseRole {
+		roles = append(roles, "license")
+	}
+	if noticeRole {
+		roles = append(roles, "notice")
+	}
+	return roles
+}
+
+func referenceLegalNamePrefix(name, prefix string) bool {
+	if name == prefix {
+		return true
+	}
+	if !strings.HasPrefix(name, prefix) {
+		return false
+	}
+	switch name[len(prefix)] {
+	case '.', '-', '_':
+		return true
+	default:
+		return false
 	}
 }
 
