@@ -312,8 +312,8 @@ func buildFailureLinkRange(
 	end uint32,
 ) {
 	for parent := start; parent < end; parent++ {
-		start, end := edgeStarts[parent], edgeStarts[parent+1]
-		for edge := start; edge < end; edge++ {
+		first, last := edgeStarts[parent], edgeStarts[parent+1]
+		for edge := first; edge < last; edge++ {
 			child := edge + 1
 			token := edgeTokens[edge]
 			failure := failures[parent]

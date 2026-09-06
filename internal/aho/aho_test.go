@@ -96,7 +96,7 @@ func TestBuildFailureLinksParallelReconstructsAutomaton(t *testing.T) {
 	patterns := make([]Pattern, 300)
 	for value := range patterns {
 		patterns[value] = Pattern{
-			Tokens: []uint32{uint32(value + 1), uint32(value + 1_000), 2_000},
+			Tokens: []uint32{uint32(value + 1), uint32(value%50 + 1), 2_000},
 			Value:  uint32(value),
 		}
 	}
