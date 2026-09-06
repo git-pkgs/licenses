@@ -162,14 +162,15 @@ required-phrase matching checks the source stopword positions.
 ## Corpus
 
 The ScanCode commit is pinned in `CORPUS_VERSION`. Regenerate the embedded
-index from a clean checkout at that commit:
+index and `CORPUS_SHA256` with:
 
 ```bash
-go run ./cmd/corpusgen \
-  -scancode /path/to/scancode-toolkit \
-  -version-file CORPUS_VERSION \
-  -output internal/corpus/corpus.bin.gz
+scripts/regenerate-corpus /path/to/scancode-toolkit
 ```
+
+The path can be any scancode-toolkit checkout; the script mounts a temporary
+worktree at the pinned commit if the checkout is on a different one. With no
+argument it reads from `.scancode/`, matching CI.
 
 ## Conformance
 

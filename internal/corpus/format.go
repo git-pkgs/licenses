@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/bits"
 	"sort"
 	"time"
 
@@ -14,7 +15,7 @@ import (
 )
 
 // FormatVersion is the on-disk corpus index format.
-const FormatVersion = 6
+const FormatVersion = 7
 
 const (
 	FlagLicenseText      uint16 = 1 << 1
@@ -34,9 +35,12 @@ const (
 	maxWordCount  = 1_000_000
 	maxTokenCount = 1_000_000
 	maxNodeCount  = 10_000_000
-	maxEdgeCount  = 10_000_000
 	maxStringLen  = 16 << 20
 	bufferSize    = 256 << 10
+	bitsPerByte   = 8
+	trieBitFactor = 2
+	shortTokenBit = 16
+	fullTokenBit  = 32
 	unknownOS     = 255
 )
 
@@ -276,32 +280,107 @@ func writeAutomaton(w io.Writer, automaton aho.Automaton) error {
 	if err := writeUvarint(w, uint64(nodeCount)); err != nil {
 		return err
 	}
-	for node := range nodeCount {
-		edgeCount := automaton.EdgeStarts[node+1] - automaton.EdgeStarts[node]
-		if err := writeUvarint(w, uint64(edgeCount)); err != nil {
-			return err
-		}
+	if err := writeEdgeCounts(w, automaton.EdgeStarts); err != nil {
+		return err
 	}
-	for _, head := range automaton.TerminalHeads {
-		if err := writeOptional(w, head); err != nil {
-			return err
-		}
+	if err := writeTerminalHeads(w, automaton.TerminalHeads); err != nil {
+		return err
 	}
-	for node := range nodeCount {
-		start, end := automaton.EdgeStarts[node], automaton.EdgeStarts[node+1]
-		var previous uint32
-		for edge := start; edge < end; edge++ {
-			token := automaton.EdgeTokens[edge]
-			if err := writeUvarint(w, uint64(token-previous)); err != nil {
-				return err
-			}
-			previous = token
-		}
+	if err := writeEdgeTokens(w, automaton.EdgeStarts, automaton.EdgeTokens); err != nil {
+		return err
 	}
 	for _, next := range automaton.OutputNext {
 		if err := writeOptional(w, next); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+func writeEdgeTokens(w io.Writer, edgeStarts, edgeTokens []uint32) error {
+	var maxDelta uint32
+	for node := 0; node+1 < len(edgeStarts); node++ {
+		var previous uint32
+		for edge := edgeStarts[node]; edge < edgeStarts[node+1]; edge++ {
+			delta := edgeTokens[edge] - previous
+			maxDelta = max(maxDelta, delta)
+			previous = edgeTokens[edge]
+		}
+	}
+	width := bits.Len32(maxDelta)
+	if width > 0 && width <= shortTokenBit {
+		width = shortTokenBit
+	} else if width > shortTokenBit {
+		width = fullTokenBit
+	}
+	if err := writeUvarint(w, uint64(width)); err != nil {
+		return err
+	}
+	byteWidth := width / bitsPerByte
+	encoded := make([]byte, len(edgeTokens)*byteWidth)
+	position := 0
+	for node := 0; node+1 < len(edgeStarts); node++ {
+		var previous uint32
+		for edge := edgeStarts[node]; edge < edgeStarts[node+1]; edge++ {
+			delta := edgeTokens[edge] - previous
+			switch width {
+			case shortTokenBit:
+				binary.LittleEndian.PutUint16(encoded[position:], uint16(delta))
+			case fullTokenBit:
+				binary.LittleEndian.PutUint32(encoded[position:], delta)
+			}
+			position += byteWidth
+			previous = edgeTokens[edge]
+		}
+	}
+	if _, err := w.Write(encoded); err != nil {
+		return fmt.Errorf("corpus: write automaton edge tokens: %w", err)
+	}
+	return nil
+}
+
+func writeEdgeCounts(w io.Writer, edgeStarts []uint32) error {
+	nodeCount := len(edgeStarts) - 1
+	bitCount := trieBitFactor*nodeCount - 1
+	encoded := make([]byte, (bitCount+bitsPerByte-1)/bitsPerByte)
+	position := 0
+	for node := range nodeCount {
+		edgeCount := int(edgeStarts[node+1] - edgeStarts[node])
+		for range edgeCount {
+			encoded[position/bitsPerByte] |= 1 << (position % bitsPerByte)
+			position++
+		}
+		position++
+	}
+	if _, err := w.Write(encoded); err != nil {
+		return fmt.Errorf("corpus: write automaton edge counts: %w", err)
+	}
+	return nil
+}
+
+func writeTerminalHeads(w io.Writer, terminalHeads []uint32) error {
+	count := 0
+	for _, head := range terminalHeads {
+		if head != aho.None {
+			count++
+		}
+	}
+	if err := writeUvarint(w, uint64(count)); err != nil {
+		return err
+	}
+	var previous uint64
+	for node, head := range terminalHeads {
+		if head == aho.None {
+			continue
+		}
+		current := uint64(node) + 1
+		if err := writeUvarint(w, current-previous); err != nil {
+			return err
+		}
+		if err := writeUvarint(w, uint64(head)); err != nil {
+			return err
+		}
+		previous = current
 	}
 	return nil
 }
@@ -596,40 +675,19 @@ func readAutomaton(r *bufio.Reader, valueCount int) (aho.Automaton, error) {
 	if nodeCount == 0 {
 		return aho.Automaton{}, errors.New("corpus: automaton has no root")
 	}
-	edgeStarts := make([]uint32, nodeCount+1)
-	var edgeCount uint64
-	for node := range nodeCount {
-		count, err := binary.ReadUvarint(r)
-		if err != nil {
-			return aho.Automaton{}, fmt.Errorf("corpus: read edge count for node %d: %w", node, err)
-		}
-		edgeCount += count
-		if edgeCount > maxEdgeCount {
-			return aho.Automaton{}, fmt.Errorf("corpus: edge count %d exceeds limit %d", edgeCount, maxEdgeCount)
-		}
-		edgeStarts[node+1] = uint32(edgeCount)
-	}
-
-	terminalHeads, err := readOptionalUint32s(r, nodeCount, "terminal head")
+	edgeStarts, err := readEdgeCounts(r, nodeCount)
 	if err != nil {
 		return aho.Automaton{}, err
 	}
 
-	edgeTokens := make([]uint32, edgeCount)
-	for node := range nodeCount {
-		start, end := edgeStarts[node], edgeStarts[node+1]
-		var previous uint32
-		for edge := start; edge < end; edge++ {
-			delta, err := readUint32(r, "edge token delta")
-			if err != nil {
-				return aho.Automaton{}, err
-			}
-			if delta == 0 || uint64(previous)+uint64(delta) > uint64(^uint32(0)) {
-				return aho.Automaton{}, fmt.Errorf("corpus: invalid edge token delta at edge %d", edge)
-			}
-			edgeTokens[edge] = previous + delta
-			previous = edgeTokens[edge]
-		}
+	terminalHeads, err := readTerminalHeads(r, nodeCount)
+	if err != nil {
+		return aho.Automaton{}, err
+	}
+
+	edgeTokens, err := readEdgeTokens(r, edgeStarts)
+	if err != nil {
+		return aho.Automaton{}, err
 	}
 	outputNext, err := readOptionalUint32s(r, valueCount, "output chain")
 	if err != nil {
@@ -653,6 +711,108 @@ func readAutomaton(r *bufio.Reader, valueCount int) (aho.Automaton, error) {
 		return aho.Automaton{}, fmt.Errorf("corpus: invalid automaton: %w", err)
 	}
 	return automaton, nil
+}
+
+func readEdgeTokens(r *bufio.Reader, edgeStarts []uint32) ([]uint32, error) {
+	edgeCount := int(edgeStarts[len(edgeStarts)-1])
+	width, err := readUint32(r, "edge token width")
+	if err != nil {
+		return nil, err
+	}
+	if (width != shortTokenBit && width != fullTokenBit) || edgeCount == 0 {
+		if edgeCount != 0 || width != 0 {
+			return nil, fmt.Errorf("corpus: invalid edge token width %d", width)
+		}
+	}
+	byteWidth := int(width) / bitsPerByte
+	encoded := make([]byte, edgeCount*byteWidth)
+	if _, err := io.ReadFull(r, encoded); err != nil {
+		return nil, fmt.Errorf("corpus: read automaton edge tokens: %w", err)
+	}
+
+	edgeTokens := make([]uint32, edgeCount)
+	position := 0
+	for node := 0; node+1 < len(edgeStarts); node++ {
+		var previous uint32
+		for edge := edgeStarts[node]; edge < edgeStarts[node+1]; edge++ {
+			var delta uint32
+			switch width {
+			case shortTokenBit:
+				delta = uint32(binary.LittleEndian.Uint16(encoded[position:]))
+			case fullTokenBit:
+				delta = binary.LittleEndian.Uint32(encoded[position:])
+			}
+			position += byteWidth
+			if delta == 0 || uint64(previous)+uint64(delta) > uint64(^uint32(0)) {
+				return nil, fmt.Errorf("corpus: invalid edge token delta at edge %d", edge)
+			}
+			edgeTokens[edge] = previous + delta
+			previous = edgeTokens[edge]
+		}
+	}
+	return edgeTokens, nil
+}
+
+func readEdgeCounts(r *bufio.Reader, nodeCount int) ([]uint32, error) {
+	bitCount := trieBitFactor*nodeCount - 1
+	encoded := make([]byte, (bitCount+bitsPerByte-1)/bitsPerByte)
+	if _, err := io.ReadFull(r, encoded); err != nil {
+		return nil, fmt.Errorf("corpus: read automaton edge counts: %w", err)
+	}
+	if padding := uint(bitCount % bitsPerByte); padding != 0 && encoded[len(encoded)-1]>>padding != 0 {
+		return nil, errors.New("corpus: non-zero automaton edge padding")
+	}
+
+	edgeStarts := make([]uint32, nodeCount+1)
+	node := 0
+	var edgeCount uint32
+	for position := range bitCount {
+		if encoded[position/bitsPerByte]&(1<<(position%bitsPerByte)) != 0 {
+			edgeCount++
+			if edgeCount >= uint32(nodeCount) {
+				return nil, errors.New("corpus: too many automaton edges")
+			}
+			continue
+		}
+		if node >= nodeCount {
+			return nil, errors.New("corpus: too many automaton nodes")
+		}
+		edgeStarts[node+1] = edgeCount
+		node++
+	}
+	if node != nodeCount || edgeCount != uint32(nodeCount-1) {
+		return nil, errors.New("corpus: inconsistent automaton edge counts")
+	}
+	return edgeStarts, nil
+}
+
+func readTerminalHeads(r *bufio.Reader, nodeCount int) ([]uint32, error) {
+	count, err := readCount(r, uint64(nodeCount), "terminal head")
+	if err != nil {
+		return nil, err
+	}
+	heads := make([]uint32, nodeCount)
+	for node := range heads {
+		heads[node] = aho.None
+	}
+	var previous uint64
+	for range count {
+		delta, err := binary.ReadUvarint(r)
+		if err != nil {
+			return nil, fmt.Errorf("corpus: read terminal node delta: %w", err)
+		}
+		if delta == 0 || delta > uint64(nodeCount)-previous {
+			return nil, errors.New("corpus: invalid terminal node delta")
+		}
+		current := previous + delta
+		head, err := readUint32(r, "terminal head")
+		if err != nil {
+			return nil, err
+		}
+		heads[current-1] = head
+		previous = current
+	}
+	return heads, nil
 }
 
 func readOptionalUint32s(r *bufio.Reader, count int, label string) ([]uint32, error) {
