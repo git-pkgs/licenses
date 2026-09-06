@@ -3416,12 +3416,10 @@
       ],
       "actual": [
         "historical",
-        "mit-old-style",
-        "other-permissive",
         "unknown-license-reference",
-        "warranty-disclaimer",
         "x11-dec1",
         "x11-doc",
+        "x11-keith-packard",
         "x11-opengroup",
         "x11-x11r5",
         "xfree86-1.0"
@@ -3435,7 +3433,7 @@
         "xfree86-1.0"
       ],
       "stage": "wrong-exact-rule-set",
-      "note": "won't-fix exact core: 2 expected expression(s) missing and 4 unexpected exact expression(s) present"
+      "note": "won't-fix exact core: 1 expected expression(s) missing and 1 unexpected exact expression(s) present"
     },
     {
       "path": "datadriven/lic4/ietf_2.txt",

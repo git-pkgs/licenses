@@ -51,6 +51,7 @@ func TestRunCorpusRegressions(t *testing.T) {
 		{"spdx-alternatives.txt", []string{"AGPL-3.0-or-later OR GPL-2.0-only"}},
 		{"spdx-custom-alternative.txt", []string{"GPL-2.0-only OR GPL-3.0-only OR LicenseRef-scancode-kde-accepted-gpl"}},
 		{"spdx-later-version.txt", []string{"GPL-3.0-or-later"}},
+		{"bsd-variable-owner.txt", []string{"BSD-3-Clause"}},
 		{"bsd-three-conditions.txt", nil},
 		{"apache-attribution.txt", nil},
 	}

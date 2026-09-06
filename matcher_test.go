@@ -132,6 +132,53 @@ func TestMatcherAhoExactMatchesAndClues(t *testing.T) {
 	}
 }
 
+func TestMatcherAhoExactMatchIgnoresUnknownWords(t *testing.T) {
+	t.Parallel()
+
+	matcher := testMatcher(t, true)
+	input := []byte("prefix alpha projectname beta suffix")
+	result, err := matcher.Match(context.Background(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Detections) != 1 || len(result.Detections[0].Matches) != 1 {
+		t.Fatalf("detections = %#v", result.Detections)
+	}
+	match := result.Detections[0].Matches[0]
+	if match.RuleID != "c-full.RULE" || match.Method != Exact ||
+		match.Start != 7 || match.End != 29 ||
+		string(match.Matched) != "alpha projectname beta" {
+		t.Fatalf("match = %#v", match)
+	}
+}
+
+func TestMatcherAhoNoticeDoesNotSpanUnknownWords(t *testing.T) {
+	t.Parallel()
+
+	matcher := testMatcher(t, false)
+	result, err := matcher.Match(context.Background(), []byte("alpha projectname reject"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Detections) != 0 || len(result.Clues) != 0 {
+		t.Fatalf("result = %#v", result)
+	}
+}
+
+func TestMatcherAhoContinuousTextDoesNotSpanUnknownWords(t *testing.T) {
+	t.Parallel()
+
+	matcher := testMatcher(t, false)
+	matcher.engine.rules[2].Flags |= corpus.FlagContinuous
+	result, err := matcher.Match(context.Background(), []byte("alpha projectname beta"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := resultExpressions(result); !slices.Equal(got, []string{"MIT"}) {
+		t.Fatalf("expressions = %v, want [MIT]", got)
+	}
+}
+
 func TestMatcherClueOnlyResultKeepsNilDetections(t *testing.T) {
 	t.Parallel()
 
@@ -693,28 +740,42 @@ func testMatcher(t *testing.T, matchedText bool) *Matcher {
 
 func TestMatchScratchRetainsBoundedBuffers(t *testing.T) {
 	t.Parallel()
-	small := matchScratch{ids: make([]tokenize.ID, 10), offsets: make([]tokenize.Offset, 10), word: make([]byte, 10)}
+	small := matchScratch{
+		ids:          make([]tokenize.ID, 10),
+		offsets:      make([]tokenize.Offset, 10),
+		unknownAfter: make([]uint32, 10),
+		word:         make([]byte, 10),
+	}
 	small.retain(matchScratch{})
-	if cap(small.ids) != 10 || cap(small.offsets) != 10 || cap(small.word) != 10 {
+	if cap(small.ids) != 10 || cap(small.offsets) != 10 ||
+		cap(small.unknownAfter) != 10 || cap(small.word) != 10 {
 		t.Fatal("small buffers discarded")
 	}
 	large := matchScratch{
-		ids:     make([]tokenize.ID, 0, matchScratchTokenCap+1),
-		offsets: make([]tokenize.Offset, 0, matchScratchTokenCap+1),
-		word:    make([]byte, 0, matchScratchWordCap+1),
+		ids:          make([]tokenize.ID, 0, matchScratchTokenCap+1),
+		offsets:      make([]tokenize.Offset, 0, matchScratchTokenCap+1),
+		unknownAfter: make([]uint32, 0, matchScratchTokenCap+1),
+		word:         make([]byte, 0, matchScratchWordCap+1),
 	}
 	original := large
 	large.retain(matchScratch{})
-	if cap(large.ids) != matchScratchTokenCap || cap(large.offsets) != matchScratchTokenCap || cap(large.word) != matchScratchWordCap {
+	if cap(large.ids) != matchScratchTokenCap || cap(large.offsets) != matchScratchTokenCap ||
+		cap(large.unknownAfter) != matchScratchTokenCap || cap(large.word) != matchScratchWordCap {
 		t.Fatal("reserve exceeds its budget")
 	}
-	if &large.ids[:1][0] == &original.ids[:1][0] || &large.offsets[:1][0] == &original.offsets[:1][0] || &large.word[:1][0] == &original.word[:1][0] {
+	if &large.ids[:1][0] == &original.ids[:1][0] ||
+		&large.offsets[:1][0] == &original.offsets[:1][0] ||
+		&large.unknownAfter[:1][0] == &original.unknownAfter[:1][0] ||
+		&large.word[:1][0] == &original.word[:1][0] {
 		t.Fatal("reserve retains oversized backing array")
 	}
 	previous := large
 	large = original
 	large.retain(previous)
-	if &large.ids[:1][0] != &previous.ids[:1][0] || &large.offsets[:1][0] != &previous.offsets[:1][0] || &large.word[:1][0] != &previous.word[:1][0] {
+	if &large.ids[:1][0] != &previous.ids[:1][0] ||
+		&large.offsets[:1][0] != &previous.offsets[:1][0] ||
+		&large.unknownAfter[:1][0] != &previous.unknownAfter[:1][0] ||
+		&large.word[:1][0] != &previous.word[:1][0] {
 		t.Fatal("bounded reserve was reallocated")
 	}
 }
