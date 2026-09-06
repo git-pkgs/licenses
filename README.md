@@ -8,7 +8,7 @@ or Python.
 
 ## Compared to ScanCode
 
-The command is a ~22 MB binary that builds one in-memory index and shares it
+The command is a ~18 MB binary that builds one in-memory index and shares it
 across goroutines. `scancode-toolkit` 32.5.0 installs to ~710 MB and loads a
 separate copy of its 413 MB license index in each worker process.
 
@@ -17,10 +17,13 @@ at `a07c49a` (2,950 files, 8-core M1 Pro, default flags) takes 0.65 s and
 239 MB peak RSS, against 94 s and 4.5 GB across nine processes for
 `scancode -l`.
 
-`licenses` matches exact token sequences, whole-text hashes, and SPDX tag
-lines only. ScanCode also does approximate matching, so it reports detections
-in more files (58 vs 51 on the cargo checkout). Differences against ScanCode's
-own detection suite are tracked in the conformance baseline.
+`licenses` matches whole-text hashes, SPDX tag lines, and exact token
+sequences. License-text and longer notice rules match across variable words
+outside the corpus vocabulary, so a differing copyright holder or year does
+not defeat the match. ScanCode also does approximate matching, so it reports
+detections in more files (58 vs 51 on the cargo checkout). Differences
+against ScanCode's own detection suite are tracked in the conformance
+baseline.
 
 ## Install
 
@@ -154,10 +157,13 @@ does not produce a match. It also includes their complete text decoded to
 UTF-8.
 
 Matching uses normalized whole-text hashes, exact token sequences, and
-`SPDX-License-Identifier` tag lines. It does not use fuzzy or sequence
-matching, so edits within a license text can prevent a match.
-Tokenization omits ScanCode's HTML and entity stopwords. Continuous and
-required-phrase matching checks the source stopword positions.
+`SPDX-License-Identifier` tag lines. Tokenization omits ScanCode's HTML and
+entity stopwords. License-text and longer notice rules match across words
+outside the corpus vocabulary and across omitted stopwords, so variable names
+or years inside an otherwise verbatim text do not defeat the match.
+Continuous and required-phrase rules still require the source stopword
+positions and no unknown words. There is no fuzzy or approximate matching, so
+other edits within a license text can prevent a match.
 
 ## Corpus
 
