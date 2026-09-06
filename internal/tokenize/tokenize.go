@@ -298,7 +298,10 @@ func Words(input []byte) []Word {
 
 func scan(input []byte, yield func(start, end int)) {
 	for offset := 0; offset < len(input); {
-		isWord, width := wordAt(input, offset)
+		isWord, width := asciiWord(input[offset]), 1
+		if input[offset] >= utf8.RuneSelf {
+			isWord, width = unicodeWordAt(input, offset)
+		}
 		if !isWord {
 			offset += width
 			continue
@@ -308,7 +311,10 @@ func scan(input []byte, yield func(start, end int)) {
 		offset += width
 		plusSeen := false
 		for offset < len(input) {
-			isWord, width = wordAt(input, offset)
+			isWord, width = asciiWord(input[offset]), 1
+			if input[offset] >= utf8.RuneSelf {
+				isWord, width = unicodeWordAt(input, offset)
+			}
 			if isWord {
 				offset += width
 				continue
@@ -324,14 +330,13 @@ func scan(input []byte, yield func(start, end int)) {
 	}
 }
 
-func wordAt(input []byte, offset int) (bool, int) {
-	if input[offset] < utf8.RuneSelf {
-		character := input[offset]
-		isWord := character >= 'a' && character <= 'z' ||
-			character >= 'A' && character <= 'Z' ||
-			character >= '0' && character <= '9'
-		return isWord, 1
-	}
+func asciiWord(character byte) bool {
+	return character >= 'a' && character <= 'z' ||
+		character >= 'A' && character <= 'Z' ||
+		character >= '0' && character <= '9'
+}
+
+func unicodeWordAt(input []byte, offset int) (bool, int) {
 	character, width := utf8.DecodeRune(input[offset:])
 	return unicode.IsLetter(character) || unicode.IsNumber(character), width
 }
