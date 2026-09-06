@@ -46,7 +46,7 @@ jobs:
           set -euo pipefail
 
           commit="$(git -C .scancode rev-parse HEAD)"
-          version="$(ruby -e 'match = File.read(ARGV.fetch(0)).match(/^version = "([^"]+)"$/); abort "missing version" unless match; puts match[1]' .scancode/pyproject-licensedcode-data.toml)"
+          version="$(sed -n 's/^version = "\([^"]*\)"$/\1/p' .scancode/pyproject-licensedcode-data.toml)"
           pinned_commit="$(sed -n 's/^commit=//p' CORPUS_VERSION)"
 
           [[ "$commit" =~ ^([0-9a-fA-F]{40}|[0-9a-fA-F]{64})$ ]]
@@ -64,7 +64,7 @@ jobs:
           fi
 
           printf 'version=%s\ncommit=%s\n' "$version" "$commit" > CORPUS_VERSION
-          COMMIT="$commit" ruby -pi -e 'sub(/^Pinned source commit: .+$/, "Pinned source commit: " + ENV.fetch("COMMIT"))' NOTICE
+          sed -i "s|^Pinned source commit: .*$|Pinned source commit: $commit|" NOTICE
           printf 'changed=true\n' >> "$GITHUB_OUTPUT"
 
       - name: Set up Go
@@ -104,7 +104,7 @@ jobs:
             -scancode .scancode \
             -version-file CORPUS_VERSION \
             -output internal/corpus/corpus.bin.gz
-          ruby -rdigest -e 'puts Digest::SHA256.file(ARGV.fetch(0)).hexdigest' internal/corpus/corpus.bin.gz > CORPUS_SHA256
+          sha256sum internal/corpus/corpus.bin.gz | cut -d' ' -f1 > CORPUS_SHA256
 
       - name: Update conformance baseline
         if: steps.upstream.outputs.changed == 'true'
