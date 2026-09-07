@@ -1,9 +1,9 @@
 {
-  "source_commit": "6ba59089789600479cda46c84c6d436774179092",
+  "source_commit": "058f4396269476bdf2abf4a6b679a76f501b7e00",
   "mode": "exact-core expressions, duplicates and order ignored; known divergences are won't-fix",
-  "cases": 1786,
-  "evaluated": 1786,
-  "passed": 1578,
+  "cases": 1787,
+  "evaluated": 1787,
+  "passed": 1579,
   "divergences": [
     {
       "path": "datadriven/lic1/COPYING.gplv3",
