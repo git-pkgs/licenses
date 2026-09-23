@@ -6,7 +6,7 @@ toolchain go1.26.7
 
 require (
 	github.com/git-pkgs/magic v0.3.1
-	github.com/git-pkgs/manifests v0.12.0
+	github.com/git-pkgs/manifests v0.12.2
 	github.com/git-pkgs/spdx v0.3.2
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -20,4 +20,5 @@ require (
 	github.com/git-pkgs/vers v0.7.0 // indirect
 	github.com/github/go-spdx/v2 v2.7.0 // indirect
 	github.com/package-url/packageurl-go v0.1.7 // indirect
+	go.yaml.in/yaml/v3 v3.0.5 // indirect
 )
