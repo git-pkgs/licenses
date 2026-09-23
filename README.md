@@ -199,6 +199,6 @@ scanner, and Licensee comparison benchmarks.
 
 ## License
 
-The Go code is released under the MIT License. ScanCode's license and rule data
+[MIT](LICENSE). ScanCode's license and rule data
 is licensed under CC-BY-4.0. See [NOTICE](NOTICE) for attribution and
 modification details.
