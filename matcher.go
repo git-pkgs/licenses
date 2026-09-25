@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"slices"
 	"strings"
 	"sync"
@@ -132,13 +133,13 @@ func WithMatchedText() Option {
 	}
 }
 
-// Matcher matches byte slices against an immutable embedded corpus.
+// Matcher matches byte slices against an immutable corpus.
 type Matcher struct {
 	engine      *matchEngine
 	matchedText bool
 }
 
-// Corpus returns information about the embedded corpus used by m. It returns
+// Corpus returns information about the corpus used by m. It returns
 // the zero value for a nil or uninitialized Matcher.
 func (m *Matcher) Corpus() CorpusInfo {
 	if m == nil || m.engine == nil {
@@ -186,12 +187,9 @@ var (
 // New loads the embedded corpus. The decoded corpus is shared by every Matcher
 // in the process.
 func New(options ...Option) (*Matcher, error) {
-	var config matcherOptions
-	for _, option := range options {
-		if option == nil {
-			return nil, errors.New("licenses: nil option")
-		}
-		option(&config)
+	config, err := configureMatcher(options)
+	if err != nil {
+		return nil, err
 	}
 
 	embeddedEngineOnce.Do(func() {
@@ -209,6 +207,42 @@ func New(options ...Option) (*Matcher, error) {
 		engine:      embeddedEngine,
 		matchedText: config.matchedText,
 	}, nil
+}
+
+// NewFromReader loads a corpus produced by cmd/corpusgen from r. Each call
+// builds an independent engine; reuse the returned Matcher across calls to
+// Match. It does not close r or initialize the shared embedded corpus.
+// The corpus must use the format supported by this version of the package.
+// Programs using only NewFromReader can omit the full embedded corpus from
+// their linked binary.
+func NewFromReader(r io.Reader, options ...Option) (*Matcher, error) {
+	config, err := configureMatcher(options)
+	if err != nil {
+		return nil, err
+	}
+	if r == nil {
+		return nil, errors.New("licenses: nil corpus reader")
+	}
+	index, err := corpus.Read(r)
+	if err != nil {
+		return nil, err
+	}
+	engine, err := newMatchEngine(index)
+	if err != nil {
+		return nil, err
+	}
+	return &Matcher{engine: engine, matchedText: config.matchedText}, nil
+}
+
+func configureMatcher(options []Option) (matcherOptions, error) {
+	var config matcherOptions
+	for _, option := range options {
+		if option == nil {
+			return matcherOptions{}, errors.New("licenses: nil option")
+		}
+		option(&config)
+	}
+	return config, nil
 }
 
 func newMatchEngine(index corpus.Index) (*matchEngine, error) {

@@ -83,7 +83,7 @@ func TestRunNormalizesUppercaseCommit(t *testing.T) {
 			}
 
 			outputPath := filepath.Join(base, "corpus.bin.gz")
-			if err := run(root, versionPath, outputPath); err != nil {
+			if err := run(root, versionPath, outputPath, "all"); err != nil {
 				t.Fatal(err)
 			}
 			output, err := os.Open(outputPath)
