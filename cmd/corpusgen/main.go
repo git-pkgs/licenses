@@ -163,7 +163,6 @@ func verifyCheckout(root, wantCommit string) error {
 	return nil
 }
 
-// A zero mask selects all rules, including those without category flags.
 func parseRuleFlags(value string) (uint16, error) {
 	if strings.TrimSpace(value) == "all" {
 		return 0, nil
@@ -213,6 +212,7 @@ func buildIndex(root string, version sourceVersion, ruleFlags uint16) (corpus.In
 	records := make([]corpus.Rule, 0, len(licenses)+len(rules))
 	records = append(records, licenses...)
 	records = append(records, rules...)
+	// A zero mask selects all rules, including those without category flags.
 	if ruleFlags != 0 {
 		records = slices.DeleteFunc(records, func(rule corpus.Rule) bool {
 			return rule.Flags&ruleFlags == 0

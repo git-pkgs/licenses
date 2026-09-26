@@ -4,9 +4,14 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/git-pkgs/licenses"
 	"github.com/git-pkgs/licenses/internal/aho"
@@ -135,6 +140,95 @@ func TestNewFromReaderLeavesReaderOpen(t *testing.T) {
 	result, err := matcher.Match(context.Background(), []byte("alpha beta"))
 	if err != nil || len(result.Detections) != 1 {
 		t.Fatalf("match after closing reader = %#v, error = %v", result, err)
+	}
+}
+
+func TestNewFromReaderOmitsEmbeddedCorpus(t *testing.T) {
+	goTool, err := exec.LookPath("go")
+	if err != nil {
+		t.Skip("Go toolchain is unavailable")
+	}
+	moduleRoot, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	goMod, err := os.ReadFile("go.mod")
+	if err != nil {
+		t.Fatal(err)
+	}
+	goSum, err := os.ReadFile("go.sum")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Reuse this checkout's toolchain and dependency versions, but consume the
+	// public API from a separate module through a local replace directive.
+	fixtureMod := strings.Replace(string(goMod),
+		"module github.com/git-pkgs/licenses", "module licenses-reader-size-test", 1)
+	fixtureMod += fmt.Sprintf(
+		"\nrequire github.com/git-pkgs/licenses v0.0.0\nreplace github.com/git-pkgs/licenses => %q\n",
+		filepath.ToSlash(moduleRoot),
+	)
+	directory := t.TempDir()
+	for name, data := range map[string][]byte{"go.mod": []byte(fixtureMod), "go.sum": goSum} {
+		if err := os.WriteFile(filepath.Join(directory, name), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const program = `package main
+
+import (
+	"context"
+	"fmt"
+	"os"
+
+	"github.com/git-pkgs/licenses"
+)
+
+func main() {
+	matcher, err := %s
+	if err != nil {
+		panic(err)
+	}
+	result, err := matcher.Match(context.Background(), []byte(os.Args[1]))
+	fmt.Println(result, err)
+}
+`
+	var sizes [2]int64
+	for i, fixture := range []struct{ name, constructor string }{
+		{"embedded", "licenses.New()"},
+		{"reader", "licenses.NewFromReader(os.Stdin)"},
+	} {
+		sourceDir := filepath.Join(directory, fixture.name)
+		if err := os.Mkdir(sourceDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		source := []byte(fmt.Sprintf(program, fixture.constructor))
+		if err := os.WriteFile(filepath.Join(sourceDir, "main.go"), source, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		binary := filepath.Join(directory, fixture.name+".bin")
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		command := exec.CommandContext(ctx, goTool, "build", "-mod=mod", "-ldflags=-s -w", "-o", binary, "./"+fixture.name)
+		command.Dir = directory
+		command.Env = append(os.Environ(), "GOWORK=off", "GOFLAGS=", "CGO_ENABLED=0")
+		output, err := command.CombinedOutput()
+		cancel()
+		if err != nil {
+			t.Fatalf("build %s fixture: %v\n%s", fixture.name, err, output)
+		}
+		info, err := os.Stat(binary)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sizes[i] = info.Size()
+	}
+	// Allow toolchain/platform differences while catching accidental retention
+	// of the approximately 12 MB embed through any shared constructor or Match path.
+	const minimumSavings = 5 << 20
+	savings := sizes[0] - sizes[1]
+	t.Logf("New binary: %d bytes; NewFromReader binary: %d bytes; saved: %d bytes", sizes[0], sizes[1], savings)
+	if savings < minimumSavings {
+		t.Fatalf("reader-only binary saves %d bytes, want at least %d; embedded corpus may have been linked", savings, minimumSavings)
 	}
 }
 
