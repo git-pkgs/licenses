@@ -132,13 +132,13 @@ func WithMatchedText() Option {
 	}
 }
 
-// Matcher matches byte slices against an immutable embedded corpus.
+// Matcher matches byte slices against an immutable corpus.
 type Matcher struct {
 	engine      *matchEngine
 	matchedText bool
 }
 
-// Corpus returns information about the embedded corpus used by m. It returns
+// Corpus returns information about the corpus used by m. It returns
 // the zero value for a nil or uninitialized Matcher.
 func (m *Matcher) Corpus() CorpusInfo {
 	if m == nil || m.engine == nil {
@@ -186,12 +186,9 @@ var (
 // New loads the embedded corpus. The decoded corpus is shared by every Matcher
 // in the process.
 func New(options ...Option) (*Matcher, error) {
-	var config matcherOptions
-	for _, option := range options {
-		if option == nil {
-			return nil, errors.New("licenses: nil option")
-		}
-		option(&config)
+	config, err := configureMatcher(options)
+	if err != nil {
+		return nil, err
 	}
 
 	embeddedEngineOnce.Do(func() {

@@ -178,6 +178,57 @@ The path can be any scancode-toolkit checkout; the script mounts a temporary
 worktree at the pinned commit if the checkout is on a different one. With no
 argument it reads from `.scancode/`, matching CI.
 
+### Caller-supplied corpus
+
+For applications that need a smaller rule set, build a separate corpus from a
+clean ScanCode checkout at the commit in `CORPUS_VERSION`:
+
+```bash
+go run ./cmd/corpusgen \
+  -scancode /path/to/scancode-toolkit \
+  -rule-flags text,notice \
+  -output /path/to/application/licenses.bin.gz
+```
+
+`-rule-flags` selects rules with **any** of the listed flags. Use `text` for
+license-text rules alone, or omit the flag (the default is `all`) for the full
+corpus. Run `go run ./cmd/corpusgen -help` for the supported flags. Filtering
+rebuilds the vocabulary, token IDs, and automaton from the selected rules.
+The complete stopword list and SPDX mappings are retained so query tokenization
+and SPDX identifier resolution remain available.
+
+Embed the generated file in your application and pass it to `NewFromReader`:
+
+```go
+import (
+    "bytes"
+    _ "embed"
+
+    "github.com/git-pkgs/licenses"
+)
+
+//go:embed licenses.bin.gz
+var licenseCorpus []byte
+
+func newLicenseMatcher() (*licenses.Matcher, error) {
+    return licenses.NewFromReader(bytes.NewReader(licenseCorpus))
+}
+```
+
+`NewFromReader` also accepts files and supports the same options as `New`.
+It reads the corpus synchronously, leaves the reader open, and builds a separate
+engine on each call; reuse the matcher for subsequent scans. Generate the corpus
+with the same package version used by your application, since the binary format
+can change between releases. Programs that never call `New` can omit the full
+embedded corpus from their linked binary.
+
+A filtered corpus trades detection coverage for size. In particular, omitted
+false-positive rules cannot suppress matches, and a smaller vocabulary changes
+which query words are treated as unknown. Test the chosen subset against your
+application's inputs. SPDX tags can still resolve identifiers outside the
+selected text rules. ScanCode corpus attribution requirements in `NOTICE`
+also apply to the generated subset.
+
 ## Conformance
 
 The exact matcher is evaluated against ScanCode's four active data-driven

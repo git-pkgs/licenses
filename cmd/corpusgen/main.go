@@ -54,10 +54,11 @@ func main() {
 	scancode := flag.String("scancode", "", "path to a checked-out scancode-toolkit tree")
 	output := flag.String("output", "internal/corpus/corpus.bin.gz", "output index path")
 	versionFile := flag.String("version-file", "CORPUS_VERSION", "pinned corpus version file")
+	ruleFlags := flag.String("rule-flags", "all", "comma-separated rule flags: text,notice,tag,reference,intro,clue,false-positive,required-phrase,continuous,deprecated; all includes every rule")
 	flag.Parse()
 
 	started := time.Now()
-	if err := run(*scancode, *versionFile, *output); err != nil {
+	if err := run(*scancode, *versionFile, *output, *ruleFlags); err != nil {
 		fmt.Fprintln(os.Stderr, "corpusgen:", err)
 		os.Exit(1)
 	}
@@ -69,7 +70,11 @@ func main() {
 	fmt.Printf("wrote %s (%d bytes) in %s\n", *output, info.Size(), time.Since(started).Round(time.Millisecond))
 }
 
-func run(scancode, versionFile, output string) error {
+func run(scancode, versionFile, output, ruleFlags string) error {
+	flags, err := parseRuleFlags(ruleFlags)
+	if err != nil {
+		return err
+	}
 	if scancode == "" {
 		return errors.New("-scancode is required")
 	}
@@ -80,7 +85,7 @@ func run(scancode, versionFile, output string) error {
 	if err := verifyCheckout(scancode, version.Commit); err != nil {
 		return err
 	}
-	index, err := buildIndex(scancode, version)
+	index, err := buildIndex(scancode, version, flags)
 	if err != nil {
 		return err
 	}
@@ -158,7 +163,34 @@ func verifyCheckout(root, wantCommit string) error {
 	return nil
 }
 
-func buildIndex(root string, version sourceVersion) (corpus.Index, error) {
+func parseRuleFlags(value string) (uint16, error) {
+	if strings.TrimSpace(value) == "all" {
+		return 0, nil
+	}
+	names := map[string]uint16{
+		"text":            corpus.FlagLicenseText,
+		"notice":          corpus.FlagLicenseNotice,
+		"tag":             corpus.FlagLicenseTag,
+		"reference":       corpus.FlagLicenseReference,
+		"intro":           corpus.FlagLicenseIntro,
+		"clue":            corpus.FlagLicenseClue,
+		"false-positive":  corpus.FlagFalsePositive,
+		"required-phrase": corpus.FlagRequiredPhrase,
+		"continuous":      corpus.FlagContinuous,
+		"deprecated":      corpus.FlagDeprecated,
+	}
+	var mask uint16
+	for _, name := range strings.Split(value, ",") {
+		flag, ok := names[strings.TrimSpace(name)]
+		if !ok {
+			return 0, fmt.Errorf("unknown rule flag %q (use all or a comma-separated list of rule flags)", name)
+		}
+		mask |= flag
+	}
+	return mask, nil
+}
+
+func buildIndex(root string, version sourceVersion, ruleFlags uint16) (corpus.Index, error) {
 	dataRoot := filepath.Join(root, "src", "licensedcode", "data")
 	stopwords, err := loadStopwords(filepath.Join(root, "src", "licensedcode", "stopwords.py"))
 	if err != nil {
@@ -180,6 +212,15 @@ func buildIndex(root string, version sourceVersion) (corpus.Index, error) {
 	records := make([]corpus.Rule, 0, len(licenses)+len(rules))
 	records = append(records, licenses...)
 	records = append(records, rules...)
+	// A zero mask selects all rules, including those without category flags.
+	if ruleFlags != 0 {
+		records = slices.DeleteFunc(records, func(rule corpus.Rule) bool {
+			return rule.Flags&ruleFlags == 0
+		})
+		if len(records) == 0 {
+			return corpus.Index{}, errors.New("no rules match the selected rule flags")
+		}
+	}
 	slices.SortFunc(records, func(first, second corpus.Rule) int {
 		return strings.Compare(first.ID, second.ID)
 	})
