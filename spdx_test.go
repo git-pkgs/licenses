@@ -341,7 +341,10 @@ func TestSPDXExpressionSpan(t *testing.T) {
 		{input: "", want: ""},
 	}
 	for _, test := range tests {
-		start, end := spdxExpressionSpan([]byte(test.input), 0)
+		start, end, complete := spdxExpressionSpan([]byte(test.input), 0)
+		if !complete {
+			t.Fatalf("span(%q) was truncated", test.input)
+		}
 		if got := test.input[start:end]; got != test.want {
 			t.Errorf("span(%q) = %q, want %q", test.input, got, test.want)
 		}
@@ -355,9 +358,9 @@ func TestSPDXExpressionSpanBounded(t *testing.T) {
 	for i := range input {
 		input[i] = 'A'
 	}
-	_, end := spdxExpressionSpan(input, 0)
-	if end != maxSPDXExpressionBytes {
-		t.Fatalf("end = %d, want %d", end, maxSPDXExpressionBytes)
+	_, end, complete := spdxExpressionSpan(input, 0)
+	if end != maxSPDXExpressionBytes || complete {
+		t.Fatalf("end = %d, complete = %v", end, complete)
 	}
 }
 

@@ -137,6 +137,12 @@ for _, detection := range result.Detections {
 }
 ```
 
+SPDX tag expressions are limited to 1,024 bytes after the colon, including
+surrounding whitespace. If a declaration exceeds that limit before a newline,
+closing block comment, or EOF, `Match` returns `ErrSPDXExpressionTooLarge`
+and an empty result. Use `errors.Is` to check for it. Repository scans record
+the failure as a per-file error, and the CLI exits with status 2.
+
 Scan a file or directory with the same matcher:
 
 ```go

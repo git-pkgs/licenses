@@ -3,6 +3,8 @@ package licenses
 import (
 	"bytes"
 	"cmp"
+	"errors"
+	"fmt"
 	"slices"
 	"sort"
 	"strings"
@@ -10,6 +12,10 @@ import (
 	"github.com/git-pkgs/licenses/internal/corpus"
 	"github.com/git-pkgs/spdx"
 )
+
+// ErrSPDXExpressionTooLarge is returned when a tag's expression exceeds 1024
+// bytes after the colon, including surrounding whitespace.
+var ErrSPDXExpressionTooLarge = errors.New("licenses: SPDX expression exceeds byte limit")
 
 const (
 	spdxTagRuleID            = "spdx-license-identifier"
@@ -116,10 +122,10 @@ type spdxDeclaration struct {
 }
 
 // matchSPDXTags preserves complete declarations over their component matches.
-func (m *Matcher) matchSPDXTags(input []byte, result *Result) bool {
+func (m *Matcher) matchSPDXTags(input []byte, result *Result) (bool, error) {
 	first := indexSPDXAnchor(input, 0)
 	if first < 0 {
-		return false
+		return false, nil
 	}
 	coverage := spdxMatchSpans(result)
 	next, coveredEnd := 0, 0
@@ -135,7 +141,10 @@ func (m *Matcher) matchSPDXTags(input []byte, result *Result) bool {
 			offset = anchor + 1
 			continue
 		}
-		start, end := spdxExpressionSpan(input, tagEnd)
+		start, end, complete := spdxExpressionSpan(input, tagEnd)
+		if !complete {
+			return false, fmt.Errorf("%w: limit %d at byte %d", ErrSPDXExpressionTooLarge, maxSPDXExpressionBytes, anchor)
+		}
 		offset = max(end, tagEnd)
 		if start >= end {
 			continue
@@ -182,7 +191,7 @@ func (m *Matcher) matchSPDXTags(input []byte, result *Result) bool {
 			(!declaration.covered || match.Start > declaration.start || match.End < declaration.end)
 	})
 	if len(pending) == 0 {
-		return changed
+		return changed, nil
 	}
 	for index := range result.Detections {
 		detection := &result.Detections[index]
@@ -194,7 +203,7 @@ func (m *Matcher) matchSPDXTags(input []byte, result *Result) bool {
 	for _, detection := range pending {
 		result.Detections = append(result.Detections, *detection)
 	}
-	return true
+	return true, nil
 }
 
 // Earlier declarations cannot remove a match extending over a later expression.
@@ -261,25 +270,27 @@ func spdxTagEnd(input []byte, anchor int) int {
 
 // spdxExpressionSpan returns the trimmed byte range of the expression that
 // follows a tag colon. The expression ends at end-of-line, a closing block
-// comment marker, or maxSPDXExpressionBytes.
-func spdxExpressionSpan(input []byte, from int) (int, int) {
+// comment marker, or EOF. The boolean is false when the byte limit cuts it off.
+func spdxExpressionSpan(input []byte, from int) (int, int, bool) {
 	limit := min(len(input), from+maxSPDXExpressionBytes)
 	end := limit
-	for offset := from; offset < limit; offset++ {
+	complete := limit == len(input)
+scan:
+	for offset := from; offset <= limit && offset < len(input); offset++ {
 		switch input[offset] {
 		case '\n', '\r':
-			end = offset
+			end, complete = offset, true
+			break scan
 		case '*':
-			if offset+1 < limit && input[offset+1] == '/' {
-				end = offset
+			if offset+1 < len(input) && input[offset+1] == '/' {
+				end, complete = offset, true
+				break scan
 			}
 		case '-':
-			if offset+2 < limit && input[offset+1] == '-' && input[offset+2] == '>' {
-				end = offset
+			if offset+2 < len(input) && input[offset+1] == '-' && input[offset+2] == '>' {
+				end, complete = offset, true
+				break scan
 			}
-		}
-		if end != limit {
-			break
 		}
 	}
 	start := from
@@ -289,7 +300,7 @@ func spdxExpressionSpan(input []byte, from int) (int, int) {
 	for end > start && (input[end-1] == ' ' || input[end-1] == '\t') {
 		end--
 	}
-	return start, end
+	return start, end, complete
 }
 
 // normalizeExpression parses raw SPDX expression bytes and returns the
