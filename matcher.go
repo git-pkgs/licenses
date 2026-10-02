@@ -328,7 +328,8 @@ func retainBuffer[T any](current, previous []T, limit int) []T {
 
 // Match finds exact normalized rule matches in b. It returns
 // ErrTooManyMatches when the input exceeds the exact-match candidate limit;
-// callers can identify it with errors.Is.
+// ErrSPDXExpressionTooLarge when a tag exceeds the expression byte limit.
+// Errors return no partial results and can be identified with errors.Is.
 func (m *Matcher) Match(ctx context.Context, b []byte) (Result, error) {
 	return m.match(ctx, b, allExactFilters)
 }
@@ -359,7 +360,9 @@ func (m *Matcher) match(ctx context.Context, b []byte, filters exactFilterOption
 	scratch.stopwordAfter = tokens.StopwordAfter
 	result := Result{Corpus: m.engine.info}
 	if len(tokens.IDs) == 0 {
-		m.matchSPDXTags(b, &result)
+		if _, err := m.matchSPDXTags(b, &result); err != nil {
+			return Result{}, err
+		}
 		sortResult(&result)
 		return result, nil
 	}
@@ -451,7 +454,11 @@ func (m *Matcher) match(ctx context.Context, b []byte, filters exactFilterOption
 		return Result{}, err
 	}
 	changed := downgradeContinuedText(b, &result)
-	if m.matchSPDXTags(b, &result) || changed {
+	spdxChanged, err := m.matchSPDXTags(b, &result)
+	if err != nil {
+		return Result{}, err
+	}
+	if spdxChanged || changed {
 		sortResult(&result)
 	} else {
 		sortDetections(result.Detections)
