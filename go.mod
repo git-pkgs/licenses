@@ -7,7 +7,7 @@ toolchain go1.26.7
 require (
 	github.com/git-pkgs/magic v0.4.0
 	github.com/git-pkgs/manifests v0.12.2
-	github.com/git-pkgs/spdx v0.3.2
+	github.com/git-pkgs/spdx v0.3.3
 	gopkg.in/yaml.v3 v3.0.1
 )
 
