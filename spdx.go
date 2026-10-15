@@ -124,6 +124,7 @@ func (m *Matcher) matchSPDXTags(input []byte, result *Result) bool {
 	coverage := spdxMatchSpans(result)
 	next, coveredEnd := 0, 0
 	var declarations []spdxDeclaration
+	var cutOff []spdxSpan
 	pending := make(map[string]*Detection)
 	for offset := first; offset < len(input); {
 		anchor := indexSPDXAnchor(input, offset)
@@ -135,9 +136,22 @@ func (m *Matcher) matchSPDXTags(input []byte, result *Result) bool {
 			offset = anchor + 1
 			continue
 		}
-		start, end := spdxExpressionSpan(input, tagEnd)
+		start, end, complete := spdxExpressionSpan(input, tagEnd)
+		if !complete {
+			start, end, _ = spdxExpressionSpanWithin(input, tagEnd, len(input))
+		}
 		offset = max(end, tagEnd)
 		if start >= end {
+			continue
+		}
+		for next < len(coverage) && coverage[next].start <= start {
+			coveredEnd = max(coveredEnd, coverage[next].end)
+			next++
+		}
+		covered := coveredEnd >= end
+		if !complete && !covered {
+			// Component matches would state part of the expression as the whole.
+			cutOff = append(cutOff, spdxSpan{anchor, end})
 			continue
 		}
 		expression, identifiers, scanCodeIDs := m.engine.spdx.normalizeExpression(input[start:end])
@@ -149,11 +163,7 @@ func (m *Matcher) matchSPDXTags(input []byte, result *Result) bool {
 			Start:      anchor,
 			End:        end,
 		})
-		for next < len(coverage) && coverage[next].start <= start {
-			coveredEnd = max(coveredEnd, coverage[next].end)
-			next++
-		}
-		if coveredEnd >= end {
+		if covered {
 			declarations = append(declarations, spdxDeclaration{anchor: anchor, start: start, end: end, covered: true})
 			continue
 		}
@@ -173,14 +183,12 @@ func (m *Matcher) matchSPDXTags(input []byte, result *Result) bool {
 		detection.Matches = append(detection.Matches, match)
 	}
 	changed := removeMatches(result, func(match Match) bool {
-		index := sort.Search(len(declarations), func(i int) bool { return declarations[i].end >= match.End })
-		if index == len(declarations) {
-			return false
-		}
-		declaration := declarations[index]
-		return match.Start >= declaration.anchor &&
-			(!declaration.covered || match.Start > declaration.start || match.End < declaration.end)
+		return supersededBySPDX(match, declarations, cutOff)
 	})
+	for _, span := range cutOff {
+		result.Clues = append(result.Clues, m.spdxCutOffClue(input, span))
+		changed = true
+	}
 	if len(pending) == 0 {
 		return changed
 	}
@@ -195,6 +203,36 @@ func (m *Matcher) matchSPDXTags(input []byte, result *Result) bool {
 		result.Detections = append(result.Detections, *detection)
 	}
 	return true
+}
+
+// spdxCutOffClue marks a tag whose expression exceeds the parse limit and is
+// not covered by a rule match.
+func (m *Matcher) spdxCutOffClue(input []byte, span spdxSpan) Match {
+	clue := Match{RuleID: spdxTagRuleID, Kind: KindClue, Method: SpdxID, Start: span.start, End: span.end}
+	if m.matchedText {
+		clue.Matched = slices.Clone(input[span.start:span.end])
+	}
+	return clue
+}
+
+// supersededBySPDX reports whether a declaration or cut-off tag replaces match.
+func supersededBySPDX(match Match, declarations []spdxDeclaration, cutOff []spdxSpan) bool {
+	if spanContains(cutOff, match.Start) {
+		return true
+	}
+	index := sort.Search(len(declarations), func(i int) bool { return declarations[i].end >= match.End })
+	if index == len(declarations) {
+		return false
+	}
+	declaration := declarations[index]
+	return match.Start >= declaration.anchor &&
+		(!declaration.covered || match.Start > declaration.start || match.End < declaration.end)
+}
+
+// spanContains reports whether offset falls inside one of the sorted spans.
+func spanContains(spans []spdxSpan, offset int) bool {
+	index := sort.Search(len(spans), func(i int) bool { return spans[i].end > offset })
+	return index < len(spans) && offset >= spans[index].start
 }
 
 // Earlier declarations cannot remove a match extending over a later expression.
@@ -261,25 +299,32 @@ func spdxTagEnd(input []byte, anchor int) int {
 
 // spdxExpressionSpan returns the trimmed byte range of the expression that
 // follows a tag colon. The expression ends at end-of-line, a closing block
-// comment marker, or maxSPDXExpressionBytes.
-func spdxExpressionSpan(input []byte, from int) (int, int) {
-	limit := min(len(input), from+maxSPDXExpressionBytes)
+// comment marker, or EOF. The boolean is false when maxSPDXExpressionBytes
+// cuts it off.
+func spdxExpressionSpan(input []byte, from int) (int, int, bool) {
+	return spdxExpressionSpanWithin(input, from, maxSPDXExpressionBytes)
+}
+
+func spdxExpressionSpanWithin(input []byte, from, maxBytes int) (int, int, bool) {
+	limit := min(len(input), from+maxBytes)
 	end := limit
-	for offset := from; offset < limit; offset++ {
+	complete := limit == len(input)
+scan:
+	for offset := from; offset <= limit && offset < len(input); offset++ {
 		switch input[offset] {
 		case '\n', '\r':
-			end = offset
+			end, complete = offset, true
+			break scan
 		case '*':
-			if offset+1 < limit && input[offset+1] == '/' {
-				end = offset
+			if offset+1 < len(input) && input[offset+1] == '/' {
+				end, complete = offset, true
+				break scan
 			}
 		case '-':
-			if offset+2 < limit && input[offset+1] == '-' && input[offset+2] == '>' {
-				end = offset
+			if offset+2 < len(input) && input[offset+1] == '-' && input[offset+2] == '>' {
+				end, complete = offset, true
+				break scan
 			}
-		}
-		if end != limit {
-			break
 		}
 	}
 	start := from
@@ -289,7 +334,7 @@ func spdxExpressionSpan(input []byte, from int) (int, int) {
 	for end > start && (input[end-1] == ' ' || input[end-1] == '\t') {
 		end--
 	}
-	return start, end
+	return start, end, complete
 }
 
 // normalizeExpression parses raw SPDX expression bytes and returns the

@@ -69,6 +69,10 @@ including lines with a shared source-comment prefix, remain detections.
 Demoted matches stay visible in the file report but do not contribute to the
 repository expression totals.
 
+An `SPDX-License-Identifier` expression longer than 1,024 bytes is parsed only
+when a single rule match covers all of it. Otherwise the tag is reported as an
+`spdx-license-identifier` clue, and matches inside the expression are dropped.
+
 The default `project` scope skips hidden, dependency, build, cache, and
 test-data directories. Use `-scope all` for dependency-license scans. An
 explicit `-skip` list applies in either scope. Both scopes exclude `.git`.
