@@ -5,7 +5,7 @@ go 1.26.0
 toolchain go1.26.7
 
 require (
-	github.com/git-pkgs/magic v0.5.0
+	github.com/git-pkgs/magic v0.6.0
 	github.com/git-pkgs/manifests v0.12.3
 	github.com/git-pkgs/spdx v0.3.3
 	gopkg.in/yaml.v3 v3.0.1
