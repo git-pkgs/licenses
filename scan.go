@@ -665,6 +665,7 @@ func declaredLicense(path, display string) (declaredRecord, bool, error) {
 }
 
 func normalizeDeclaredExpression(raw []string) string {
+	raw = withoutSpecialLicenseValues(raw)
 	if len(raw) == 0 {
 		return ""
 	}
@@ -1362,4 +1363,20 @@ func addIdentificationSummary(
 	if noAssertion {
 		summary.FilesWithNoAssertionDetections++
 	}
+}
+
+// withoutSpecialLicenseValues drops NONE and NOASSERTION when other licenses
+// are declared, since SPDX only allows them standalone.
+func withoutSpecialLicenseValues(raw []string) []string {
+	kept := make([]string, 0, len(raw))
+	for _, value := range raw {
+		value = strings.TrimSpace(value)
+		if !strings.EqualFold(value, "NONE") && !strings.EqualFold(value, "NOASSERTION") {
+			kept = append(kept, value)
+		}
+	}
+	if len(kept) == 0 {
+		return raw
+	}
+	return kept
 }
