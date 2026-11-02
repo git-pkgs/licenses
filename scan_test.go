@@ -267,6 +267,33 @@ func TestScanExplicitManifestDeclaredLicense(t *testing.T) {
 	}
 }
 
+func TestScanDeclaredLicenseDropsSpecialValues(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]string{
+		`["MIT", "NOASSERTION"]`: "MIT",
+		`["NONE", "Apache-2.0"]`: "Apache-2.0",
+		`["NOASSERTION"]`:        "NOASSERTION",
+	}
+	for licenses, want := range tests {
+		manifest := filepath.Join(t.TempDir(), "composer.json")
+		writeTestFile(t, manifest, []byte(`{"name":"acme/demo","license":`+licenses+`}`))
+		report, err := scanRepository(
+			context.Background(),
+			newTestMatcher(t),
+			manifest,
+			defaultTestScanOptions(),
+			testScannerVersion,
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(report.Declared) != 1 || report.Declared[0].NormalizedExpression != want {
+			t.Errorf("license %s: declared = %#v, want normalized %q", licenses, report.Declared, want)
+		}
+	}
+}
+
 func TestScanExplicitMalformedManifestReportsError(t *testing.T) {
 	t.Parallel()
 
