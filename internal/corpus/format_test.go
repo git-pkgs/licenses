@@ -3,7 +3,12 @@ package corpus
 import (
 	"bufio"
 	"bytes"
+	"compress/gzip"
+	"fmt"
+	"io"
+	"reflect"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/git-pkgs/licenses/internal/aho"
@@ -297,5 +302,201 @@ func TestReadTerminalHeadsRejectsDuplicateNode(t *testing.T) {
 	}
 	if _, err := readTerminalHeads(bufio.NewReader(&encoded), 2); err == nil {
 		t.Fatal("readTerminalHeads accepted a duplicate node")
+	}
+}
+
+func automatonTestIndex(t *testing.T) Index {
+	t.Helper()
+
+	rules := []Rule{
+		{ID: "a.LICENSE", Expression: "apache-2.0", Tokens: []uint32{1, 2, 3}, Flags: FlagLicenseText, Relevance: 100},
+		{ID: "b.RULE", Expression: "apache-2.0", Tokens: []uint32{1, 2}, Flags: FlagLicenseNotice, Relevance: 100},
+		{ID: "c.RULE", Expression: "mit", Flags: FlagLicenseTag, Relevance: 90},
+		{ID: "d.RULE", Expression: "zlib", Tokens: []uint32{2, 3}, Flags: FlagLicenseReference, Relevance: 80},
+	}
+	patterns := make([]aho.Pattern, 0, len(rules))
+	for index, rule := range rules {
+		patterns = append(patterns, aho.Pattern{Tokens: rule.Tokens, Value: uint32(index)})
+	}
+	automaton, err := aho.Build(patterns, len(rules))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return Index{
+		Info:         Info{Version: "test-version", RuleCount: len(rules), SourceCommit: "0123456789abcdef"},
+		Vocabulary:   []string{"apache", "license", "version"},
+		StopwordIDs:  []uint32{2},
+		Rules:        rules,
+		Automaton:    automaton,
+		SPDXKeys:     map[string]string{"apache-2.0": "apache-2.0", "mit": "mit"},
+		ReportingIDs: map[string]string{"apache-2.0": "Apache-2.0", "mit": "MIT"},
+	}
+}
+
+func encodeIndex(t *testing.T, index Index, version uint64, storeAutomaton bool) []byte {
+	t.Helper()
+
+	var data bytes.Buffer
+	if err := encode(&data, index, version, storeAutomaton); err != nil {
+		t.Fatal(err)
+	}
+	return data.Bytes()
+}
+
+func decompress(t *testing.T, data []byte) []byte {
+	t.Helper()
+
+	zr, err := gzip.NewReader(bytes.NewReader(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := io.ReadAll(zr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return raw
+}
+
+func compress(t *testing.T, raw []byte) []byte {
+	t.Helper()
+
+	var data bytes.Buffer
+	zw := gzip.NewWriter(&data)
+	if _, err := zw.Write(raw); err != nil {
+		t.Fatal(err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return data.Bytes()
+}
+
+func TestWriteWithoutAutomatonRebuildsOnRead(t *testing.T) {
+	t.Parallel()
+
+	index := automatonTestIndex(t)
+	var stored, omitted, repeated bytes.Buffer
+	if err := Write(&stored, index); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteWithoutAutomaton(&omitted, index); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteWithoutAutomaton(&repeated, index); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(omitted.Bytes(), repeated.Bytes()) {
+		t.Fatal("encoding without the automaton is not deterministic")
+	}
+	if len(decompress(t, omitted.Bytes())) >= len(decompress(t, stored.Bytes())) {
+		t.Fatal("omitting the automaton did not shrink the index")
+	}
+
+	want, err := Read(bytes.NewReader(stored.Bytes()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := Read(bytes.NewReader(omitted.Bytes()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatal("index read without a stored automaton differs from the stored index")
+	}
+	if !reflect.DeepEqual(got.Automaton, index.Automaton) {
+		t.Fatal("rebuilt automaton differs from the built automaton")
+	}
+}
+
+func TestWriteWithoutAutomatonSkipsAutomatonValidation(t *testing.T) {
+	t.Parallel()
+
+	index := automatonTestIndex(t)
+	index.Automaton = aho.Automaton{}
+	if err := Write(&bytes.Buffer{}, index); err == nil {
+		t.Fatal("Write accepted a missing automaton")
+	}
+	var data bytes.Buffer
+	if err := WriteWithoutAutomaton(&data, index); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Read(&data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := got.Automaton.Validate(len(got.Rules)); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestReadLegacyFormat(t *testing.T) {
+	t.Parallel()
+
+	index := automatonTestIndex(t)
+	legacy := encodeIndex(t, index, legacyFormatVersion, true)
+	current := encodeIndex(t, index, FormatVersion, true)
+	if raw := decompress(t, legacy); raw[len(magic)] != legacyFormatVersion {
+		t.Fatalf("legacy format version = %d", raw[len(magic)])
+	}
+
+	want, err := Read(bytes.NewReader(current))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := Read(bytes.NewReader(legacy))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatal("legacy index differs from the current index")
+	}
+}
+
+func TestEncodeRejectsLegacyFormatWithoutAutomaton(t *testing.T) {
+	t.Parallel()
+
+	err := encode(&bytes.Buffer{}, automatonTestIndex(t), legacyFormatVersion, false)
+	if err == nil || !strings.Contains(err.Error(), "requires the automaton") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestReadRejectsInvalidAutomatonMarker(t *testing.T) {
+	t.Parallel()
+
+	index := automatonTestIndex(t)
+	stored := decompress(t, encodeIndex(t, index, FormatVersion, true))
+	omitted := decompress(t, encodeIndex(t, index, FormatVersion, false))
+	marker := 0
+	for stored[marker] == omitted[marker] {
+		marker++
+	}
+	if stored[marker] != automatonStored || omitted[marker] != automatonOmitted {
+		t.Fatalf("markers = %d, %d", stored[marker], omitted[marker])
+	}
+
+	omitted[marker] = 2
+	_, err := Read(bytes.NewReader(compress(t, omitted)))
+	if err == nil || !strings.Contains(err.Error(), "invalid automaton marker 2") {
+		t.Fatalf("error = %v", err)
+	}
+	_, err = Read(bytes.NewReader(compress(t, omitted[:marker])))
+	if err == nil || !strings.Contains(err.Error(), "read automaton marker") {
+		t.Fatalf("truncated marker error = %v", err)
+	}
+}
+
+func TestReadRejectsUnsupportedFormatVersions(t *testing.T) {
+	t.Parallel()
+
+	raw := decompress(t, encodeIndex(t, automatonTestIndex(t), FormatVersion, true))
+	for _, version := range []byte{legacyFormatVersion - 1, FormatVersion + 1} {
+		patched := slices.Clone(raw)
+		patched[len(magic)] = version
+		_, err := Read(bytes.NewReader(compress(t, patched)))
+		want := fmt.Sprintf("unsupported format version %d", version)
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("version %d error = %v", version, err)
+		}
 	}
 }

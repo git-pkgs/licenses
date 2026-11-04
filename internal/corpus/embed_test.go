@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -122,6 +123,20 @@ func TestEmbeddedAutomatonMatchesEveryRule(t *testing.T) {
 		if !slices.Contains(outputs, uint32(ruleIndex)) {
 			t.Fatalf("%s is absent from its terminal output", rule.ID)
 		}
+	}
+}
+
+func TestEmbeddedAutomatonRebuildsFromRules(t *testing.T) {
+	index, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rebuilt, err := rebuildAutomaton(index.Rules)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(rebuilt, index.Automaton) {
+		t.Fatal("automaton rebuilt from the embedded rules differs from the stored automaton")
 	}
 }
 

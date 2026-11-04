@@ -55,10 +55,11 @@ func main() {
 	output := flag.String("output", "internal/corpus/corpus.bin.gz", "output index path")
 	versionFile := flag.String("version-file", "CORPUS_VERSION", "pinned corpus version file")
 	ruleFlags := flag.String("rule-flags", "all", "comma-separated rule flags: text,notice,tag,reference,intro,clue,false-positive,required-phrase,continuous,deprecated; all includes every rule")
+	omitAutomaton := flag.Bool("omit-automaton", false, "leave the automaton out of the index so it is rebuilt on load; smaller output, slower startup")
 	flag.Parse()
 
 	started := time.Now()
-	if err := run(*scancode, *versionFile, *output, *ruleFlags); err != nil {
+	if err := run(*scancode, *versionFile, *output, *ruleFlags, *omitAutomaton); err != nil {
 		fmt.Fprintln(os.Stderr, "corpusgen:", err)
 		os.Exit(1)
 	}
@@ -70,7 +71,7 @@ func main() {
 	fmt.Printf("wrote %s (%d bytes) in %s\n", *output, info.Size(), time.Since(started).Round(time.Millisecond))
 }
 
-func run(scancode, versionFile, output, ruleFlags string) error {
+func run(scancode, versionFile, output, ruleFlags string, omitAutomaton bool) error {
 	flags, err := parseRuleFlags(ruleFlags)
 	if err != nil {
 		return err
@@ -89,7 +90,7 @@ func run(scancode, versionFile, output, ruleFlags string) error {
 	if err != nil {
 		return err
 	}
-	return writeIndex(output, index)
+	return writeIndex(output, index, omitAutomaton)
 }
 
 func readSourceVersion(path string) (sourceVersion, error) {
@@ -559,7 +560,7 @@ func splitFrontmatter(data []byte) ([]byte, []byte, error) {
 	return nil, nil, errors.New("missing closing YAML delimiter")
 }
 
-func writeIndex(path string, index corpus.Index) error {
+func writeIndex(path string, index corpus.Index, omitAutomaton bool) error {
 	parent := filepath.Dir(path)
 	if err := os.MkdirAll(parent, directoryMode); err != nil {
 		return fmt.Errorf("create output directory: %w", err)
@@ -575,7 +576,11 @@ func writeIndex(path string, index corpus.Index) error {
 		_ = temporary.Close()
 		return fmt.Errorf("set index permissions: %w", err)
 	}
-	if err := corpus.Write(temporary, index); err != nil {
+	write := corpus.Write
+	if omitAutomaton {
+		write = corpus.WriteWithoutAutomaton
+	}
+	if err := write(temporary, index); err != nil {
 		_ = temporary.Close()
 		return err
 	}

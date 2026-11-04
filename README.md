@@ -201,6 +201,13 @@ rebuilds the vocabulary, token IDs, and automaton from the selected rules.
 The complete stopword list and SPDX mappings are retained so query tokenization
 and SPDX identifier resolution remain available.
 
+Add `-omit-automaton` to leave the Aho-Corasick automaton out of the file. It
+is most of the corpus size and is rebuilt from the rule tokens when the corpus
+is read, so detection results are unchanged while loading takes longer. At the
+pinned commit a `text` corpus is 10.4 MB with the automaton and 3.2 MB without
+it. The rebuild adds about 0.2 s to `NewFromReader` on a darwin/arm64 machine.
+The embedded corpus used by `New` keeps its automaton.
+
 Embed the generated file in your application and pass it to `NewFromReader`:
 
 ```go
