@@ -53,9 +53,6 @@ const (
 	unknownOS     = 255
 )
 
-// maxPatternTokenCount bounds the trie built when the automaton is omitted.
-const maxPatternTokenCount = 50_000_000
-
 var magic = [8]byte{'G', 'L', 'I', 'C', 'I', 'D', 'X', 0}
 
 // Info identifies the source and contents of an index.
@@ -109,6 +106,12 @@ func encode(w io.Writer, index Index, version uint64, storeAutomaton bool) error
 	}
 	if err := validateIndex(index, storeAutomaton); err != nil {
 		return err
+	}
+	if !storeAutomaton {
+		// Refuse output that Read could not rebuild.
+		if _, err := rebuildPatterns(index.Rules); err != nil {
+			return err
+		}
 	}
 
 	zw, err := gzip.NewWriterLevel(w, gzip.BestCompression)
@@ -732,6 +735,25 @@ func readAutomatonSection(r *bufio.Reader, version uint64, rules []Rule) (aho.Au
 // rebuildAutomaton constructs the automaton from the rule tokens, matching
 // the one corpusgen stores.
 func rebuildAutomaton(rules []Rule) (aho.Automaton, error) {
+	patterns, err := rebuildPatterns(rules)
+	if err != nil {
+		return aho.Automaton{}, err
+	}
+	automaton, err := aho.Build(patterns, len(rules))
+	if err != nil {
+		return aho.Automaton{}, fmt.Errorf("corpus: rebuild automaton: %w", err)
+	}
+	if err := automaton.Validate(len(rules)); err != nil {
+		return aho.Automaton{}, fmt.Errorf("corpus: invalid automaton: %w", err)
+	}
+	return automaton, nil
+}
+
+// rebuildPatterns returns the automaton patterns for rules. Every node past
+// the root consumes at least one token and aho.Build allocates per token, so
+// keeping the token total below maxNodeCount holds the rebuild to the node
+// limit a stored automaton must meet before anything is allocated.
+func rebuildPatterns(rules []Rule) ([]aho.Pattern, error) {
 	patterns := make([]aho.Pattern, 0, len(rules))
 	tokenCount := 0
 	for index, rule := range rules {
@@ -739,22 +761,12 @@ func rebuildAutomaton(rules []Rule) (aho.Automaton, error) {
 			continue
 		}
 		tokenCount += len(rule.Tokens)
-		if tokenCount > maxPatternTokenCount {
-			return aho.Automaton{}, errors.New("corpus: rule tokens exceed automaton rebuild limit")
+		if tokenCount >= maxNodeCount {
+			return nil, fmt.Errorf("corpus: rule tokens exceed the automaton rebuild limit of %d", maxNodeCount-1)
 		}
 		patterns = append(patterns, aho.Pattern{Tokens: rule.Tokens, Value: uint32(index)})
 	}
-	automaton, err := aho.Build(patterns, len(rules))
-	if err != nil {
-		return aho.Automaton{}, fmt.Errorf("corpus: rebuild automaton: %w", err)
-	}
-	if automaton.NodeCount() > maxNodeCount {
-		return aho.Automaton{}, errors.New("corpus: rebuilt automaton exceeds node limit")
-	}
-	if err := automaton.Validate(len(rules)); err != nil {
-		return aho.Automaton{}, fmt.Errorf("corpus: invalid automaton: %w", err)
-	}
-	return automaton, nil
+	return patterns, nil
 }
 
 func readAutomaton(r *bufio.Reader, valueCount int) (aho.Automaton, error) {

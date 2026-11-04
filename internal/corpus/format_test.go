@@ -500,3 +500,96 @@ func TestReadRejectsUnsupportedFormatVersions(t *testing.T) {
 		}
 	}
 }
+
+// rebuildLimitIndex returns an index whose rules hold tokenCount tokens in
+// total. The rules share one token slice to keep the test small.
+func rebuildLimitIndex(tokenCount int) Index {
+	shared := make([]uint32, maxTokenCount)
+	for position := range shared {
+		shared[position] = 1
+	}
+	var rules []Rule
+	for remaining := tokenCount; remaining > 0; remaining -= maxTokenCount {
+		rules = append(rules, Rule{
+			ID:         fmt.Sprintf("rule-%02d.RULE", len(rules)),
+			Expression: "mit",
+			Tokens:     shared[:min(remaining, maxTokenCount)],
+		})
+	}
+	return Index{
+		Info:       Info{Version: "test", RuleCount: len(rules), SourceCommit: "commit"},
+		Vocabulary: []string{"license"},
+		Rules:      rules,
+	}
+}
+
+func TestRebuildPatternsHoldsTokensBelowNodeLimit(t *testing.T) {
+	t.Parallel()
+
+	patterns, err := rebuildPatterns(rebuildLimitIndex(maxNodeCount - 1).Rules)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(patterns) != 10 {
+		t.Fatalf("patterns = %d, want 10", len(patterns))
+	}
+	_, err = rebuildPatterns(rebuildLimitIndex(maxNodeCount).Rules)
+	if err == nil || !strings.Contains(err.Error(), "automaton rebuild limit") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestWriteWithoutAutomatonRejectsUnloadableIndex(t *testing.T) {
+	t.Parallel()
+
+	var data bytes.Buffer
+	err := WriteWithoutAutomaton(&data, rebuildLimitIndex(maxNodeCount))
+	if err == nil || !strings.Contains(err.Error(), "automaton rebuild limit") {
+		t.Fatalf("error = %v", err)
+	}
+	if data.Len() != 0 {
+		t.Fatalf("wrote %d bytes for a rejected index", data.Len())
+	}
+}
+
+func TestReadRejectsOmittedAutomatonOverRebuildLimit(t *testing.T) {
+	t.Parallel()
+
+	index := rebuildLimitIndex(maxNodeCount)
+	var raw bytes.Buffer
+	bw := bufio.NewWriter(&raw)
+	if err := writeHeader(bw, FormatVersion, index.Info); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeStrings(bw, index.Vocabulary); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeUint32s(bw, index.StopwordIDs); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeUvarint(bw, uint64(len(index.Rules))); err != nil {
+		t.Fatal(err)
+	}
+	for _, rule := range index.Rules {
+		if err := writeRule(bw, rule); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := writeAutomatonSection(bw, FormatVersion, aho.Automaton{}, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeStringMap(bw, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeStringMap(bw, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := bw.Flush(); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := Read(bytes.NewReader(compress(t, raw.Bytes())))
+	if err == nil || !strings.Contains(err.Error(), "automaton rebuild limit") {
+		t.Fatalf("error = %v", err)
+	}
+}
