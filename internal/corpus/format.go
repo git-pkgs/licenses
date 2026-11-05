@@ -101,9 +101,6 @@ func WriteWithoutAutomaton(w io.Writer, index Index) error {
 }
 
 func encode(w io.Writer, index Index, version uint64, storeAutomaton bool) error {
-	if version == legacyFormatVersion && !storeAutomaton {
-		return errors.New("corpus: format version 7 requires the automaton")
-	}
 	if err := validateIndex(index, storeAutomaton); err != nil {
 		return err
 	}

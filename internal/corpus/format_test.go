@@ -452,15 +452,6 @@ func TestReadLegacyFormat(t *testing.T) {
 	}
 }
 
-func TestEncodeRejectsLegacyFormatWithoutAutomaton(t *testing.T) {
-	t.Parallel()
-
-	err := encode(&bytes.Buffer{}, automatonTestIndex(t), legacyFormatVersion, false)
-	if err == nil || !strings.Contains(err.Error(), "requires the automaton") {
-		t.Fatalf("error = %v", err)
-	}
-}
-
 func TestReadRejectsInvalidAutomatonMarker(t *testing.T) {
 	t.Parallel()
 
