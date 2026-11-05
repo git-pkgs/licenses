@@ -14,8 +14,17 @@ import (
 	"github.com/git-pkgs/licenses/internal/aho"
 )
 
-// FormatVersion is the on-disk corpus index format.
-const FormatVersion = 7
+// FormatVersion is the on-disk corpus index format. Version 8 records whether
+// the automaton is stored or must be rebuilt from the rule tokens.
+const FormatVersion = 8
+
+// legacyFormatVersion always stores the automaton and remains readable.
+const legacyFormatVersion = 7
+
+const (
+	automatonOmitted byte = 0
+	automatonStored  byte = 1
+)
 
 const (
 	FlagLicenseText      uint16 = 1 << 1
@@ -81,8 +90,25 @@ type Index struct {
 
 // Write encodes index as a deterministic gzip-compressed binary stream.
 func Write(w io.Writer, index Index) error {
-	if err := validateIndex(index); err != nil {
+	return encode(w, index, FormatVersion, true)
+}
+
+// WriteWithoutAutomaton encodes index like Write but leaves out the
+// automaton, which Read rebuilds from the rule tokens. The output is smaller
+// and slower to load.
+func WriteWithoutAutomaton(w io.Writer, index Index) error {
+	return encode(w, index, FormatVersion, false)
+}
+
+func encode(w io.Writer, index Index, version uint64, storeAutomaton bool) error {
+	if err := validateIndex(index, storeAutomaton); err != nil {
 		return err
+	}
+	if !storeAutomaton {
+		// Refuse output that Read could not rebuild.
+		if _, err := rebuildPatterns(index.Rules); err != nil {
+			return err
+		}
 	}
 
 	zw, err := gzip.NewWriterLevel(w, gzip.BestCompression)
@@ -93,7 +119,7 @@ func Write(w io.Writer, index Index) error {
 	zw.OS = unknownOS
 	bw := bufio.NewWriterSize(zw, bufferSize)
 
-	if err := writeHeader(bw, index.Info); err != nil {
+	if err := writeHeader(bw, version, index.Info); err != nil {
 		_ = zw.Close()
 		return err
 	}
@@ -115,7 +141,7 @@ func Write(w io.Writer, index Index) error {
 			return err
 		}
 	}
-	if err := writeAutomaton(bw, index.Automaton); err != nil {
+	if err := writeAutomatonSection(bw, version, index.Automaton, storeAutomaton); err != nil {
 		_ = zw.Close()
 		return err
 	}
@@ -137,7 +163,7 @@ func Write(w io.Writer, index Index) error {
 	return nil
 }
 
-func validateIndex(index Index) error {
+func validateIndex(index Index, storeAutomaton bool) error {
 	if index.Info.Version == "" {
 		return errors.New("corpus: missing version")
 	}
@@ -206,8 +232,10 @@ func validateIndex(index Index) error {
 			previous = after
 		}
 	}
-	if err := index.Automaton.Validate(len(rules)); err != nil {
-		return fmt.Errorf("corpus: invalid automaton: %w", err)
+	if storeAutomaton {
+		if err := index.Automaton.Validate(len(rules)); err != nil {
+			return fmt.Errorf("corpus: invalid automaton: %w", err)
+		}
 	}
 	return validateIdentifierMaps(index)
 }
@@ -231,11 +259,11 @@ func validateIdentifierMap(name string, keys map[string]string) error {
 	return nil
 }
 
-func writeHeader(w io.Writer, info Info) error {
+func writeHeader(w io.Writer, version uint64, info Info) error {
 	if _, err := w.Write(magic[:]); err != nil {
 		return fmt.Errorf("corpus: write magic: %w", err)
 	}
-	if err := writeUvarint(w, FormatVersion); err != nil {
+	if err := writeUvarint(w, version); err != nil {
 		return err
 	}
 	if err := writeString(w, info.Version); err != nil {
@@ -273,6 +301,22 @@ func writeUint32s(w io.Writer, values []uint32) error {
 		}
 	}
 	return nil
+}
+
+func writeAutomatonSection(w io.Writer, version uint64, automaton aho.Automaton, store bool) error {
+	if version != legacyFormatVersion {
+		marker := automatonOmitted
+		if store {
+			marker = automatonStored
+		}
+		if _, err := w.Write([]byte{marker}); err != nil {
+			return fmt.Errorf("corpus: write automaton marker: %w", err)
+		}
+	}
+	if !store {
+		return nil
+	}
+	return writeAutomaton(w, automaton)
 }
 
 func writeAutomaton(w io.Writer, automaton aho.Automaton) error {
@@ -456,7 +500,7 @@ func Read(r io.Reader) (Index, error) {
 	defer func() { _ = zr.Close() }()
 
 	br := bufio.NewReaderSize(zr, bufferSize)
-	info, err := readHeader(br)
+	version, info, err := readHeader(br)
 	if err != nil {
 		return Index{}, err
 	}
@@ -515,7 +559,7 @@ func Read(r io.Reader) (Index, error) {
 			previous = after
 		}
 	}
-	automaton, err := readAutomaton(br, count)
+	automaton, err := readAutomatonSection(br, version, rules)
 	if err != nil {
 		return Index{}, err
 	}
@@ -576,30 +620,30 @@ func readStringMap(r *bufio.Reader, limit uint64) (map[string]string, error) {
 	return values, nil
 }
 
-func readHeader(r *bufio.Reader) (Info, error) {
+func readHeader(r *bufio.Reader) (uint64, Info, error) {
 	var gotMagic [len(magic)]byte
 	if _, err := io.ReadFull(r, gotMagic[:]); err != nil {
-		return Info{}, fmt.Errorf("corpus: read magic: %w", err)
+		return 0, Info{}, fmt.Errorf("corpus: read magic: %w", err)
 	}
 	if gotMagic != magic {
-		return Info{}, errors.New("corpus: invalid magic")
+		return 0, Info{}, errors.New("corpus: invalid magic")
 	}
 	version, err := binary.ReadUvarint(r)
 	if err != nil {
-		return Info{}, fmt.Errorf("corpus: read format version: %w", err)
+		return 0, Info{}, fmt.Errorf("corpus: read format version: %w", err)
 	}
-	if version != FormatVersion {
-		return Info{}, fmt.Errorf("corpus: unsupported format version %d", version)
+	if version != FormatVersion && version != legacyFormatVersion {
+		return 0, Info{}, fmt.Errorf("corpus: unsupported format version %d", version)
 	}
 	corpusVersion, err := readString(r)
 	if err != nil {
-		return Info{}, err
+		return 0, Info{}, err
 	}
 	sourceCommit, err := readString(r)
 	if err != nil {
-		return Info{}, err
+		return 0, Info{}, err
 	}
-	return Info{Version: corpusVersion, SourceCommit: sourceCommit}, nil
+	return version, Info{Version: corpusVersion, SourceCommit: sourceCommit}, nil
 }
 
 func readRule(r *bufio.Reader) (Rule, error) {
@@ -665,6 +709,61 @@ func readStrings(r *bufio.Reader, limit uint64) ([]string, error) {
 		}
 	}
 	return values, nil
+}
+
+func readAutomatonSection(r *bufio.Reader, version uint64, rules []Rule) (aho.Automaton, error) {
+	if version == legacyFormatVersion {
+		return readAutomaton(r, len(rules))
+	}
+	marker, err := r.ReadByte()
+	if err != nil {
+		return aho.Automaton{}, fmt.Errorf("corpus: read automaton marker: %w", err)
+	}
+	switch marker {
+	case automatonStored:
+		return readAutomaton(r, len(rules))
+	case automatonOmitted:
+		return rebuildAutomaton(rules)
+	default:
+		return aho.Automaton{}, fmt.Errorf("corpus: invalid automaton marker %d", marker)
+	}
+}
+
+// rebuildAutomaton constructs the automaton from the rule tokens, matching
+// the one corpusgen stores.
+func rebuildAutomaton(rules []Rule) (aho.Automaton, error) {
+	patterns, err := rebuildPatterns(rules)
+	if err != nil {
+		return aho.Automaton{}, err
+	}
+	automaton, err := aho.Build(patterns, len(rules))
+	if err != nil {
+		return aho.Automaton{}, fmt.Errorf("corpus: rebuild automaton: %w", err)
+	}
+	if err := automaton.Validate(len(rules)); err != nil {
+		return aho.Automaton{}, fmt.Errorf("corpus: invalid automaton: %w", err)
+	}
+	return automaton, nil
+}
+
+// rebuildPatterns returns the automaton patterns for rules. Every node past
+// the root consumes at least one token and aho.Build allocates per token, so
+// keeping the token total below maxNodeCount holds the rebuild to the node
+// limit a stored automaton must meet before anything is allocated.
+func rebuildPatterns(rules []Rule) ([]aho.Pattern, error) {
+	patterns := make([]aho.Pattern, 0, len(rules))
+	tokenCount := 0
+	for index, rule := range rules {
+		if len(rule.Tokens) == 0 {
+			continue
+		}
+		tokenCount += len(rule.Tokens)
+		if tokenCount >= maxNodeCount {
+			return nil, fmt.Errorf("corpus: rule tokens exceed the automaton rebuild limit of %d", maxNodeCount-1)
+		}
+		patterns = append(patterns, aho.Pattern{Tokens: rule.Tokens, Value: uint32(index)})
+	}
+	return patterns, nil
 }
 
 func readAutomaton(r *bufio.Reader, valueCount int) (aho.Automaton, error) {

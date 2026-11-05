@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -85,7 +86,7 @@ func TestRunNormalizesUppercaseCommit(t *testing.T) {
 			}
 
 			outputPath := filepath.Join(base, "corpus.bin.gz")
-			if err := run(root, versionPath, outputPath, "all"); err != nil {
+			if err := run(root, versionPath, outputPath, "all", false); err != nil {
 				t.Fatal(err)
 			}
 			output, err := os.Open(outputPath)
@@ -102,6 +103,29 @@ func TestRunNormalizesUppercaseCommit(t *testing.T) {
 			}
 			if index.Info.SourceCommit != commit {
 				t.Fatalf("source commit = %q, want %q", index.Info.SourceCommit, commit)
+			}
+
+			omittedPath := filepath.Join(base, "omitted.bin.gz")
+			if err := run(root, versionPath, omittedPath, "all", true); err != nil {
+				t.Fatal(err)
+			}
+			omittedData, err := os.ReadFile(omittedPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			storedData, err := os.ReadFile(outputPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(omittedData) >= len(storedData) {
+				t.Fatalf("-omit-automaton output is %d bytes, default output %d", len(omittedData), len(storedData))
+			}
+			omitted, err := corpus.Read(bytes.NewReader(omittedData))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(omitted, index) {
+				t.Fatal("-omit-automaton output decodes differently from the default output")
 			}
 		})
 	}
@@ -480,21 +504,30 @@ func TestBuildFilteredIndex(t *testing.T) {
 			if !bytes.Equal(first.Bytes(), second.Bytes()) {
 				t.Fatal("filtered build is not deterministic")
 			}
-			matcher, err := licenses.NewFromReader(&first)
-			if err != nil {
+			var omitted bytes.Buffer
+			if err := corpus.WriteWithoutAutomaton(&omitted, index); err != nil {
 				t.Fatal(err)
 			}
-			result, err := matcher.Match(context.Background(), []byte("alpha quot beta"))
-			if err != nil || len(result.Detections) != 1 || result.Detections[0].Expression != "MIT" {
-				t.Fatalf("result = %#v, error = %v", result, err)
+			if omitted.Len() >= first.Len() {
+				t.Fatalf("index without automaton is %d bytes, with automaton %d", omitted.Len(), first.Len())
 			}
-			result, err = matcher.Match(context.Background(), []byte("gamma quot delta"))
-			if err != nil {
-				t.Fatal(err)
-			}
-			wantNotice := test.flags != corpus.FlagLicenseText
-			if (len(result.Detections) != 0) != wantNotice {
-				t.Fatalf("notice detections = %#v, want notice present: %t", result.Detections, wantNotice)
+			for name, data := range map[string][]byte{"stored": first.Bytes(), "omitted": omitted.Bytes()} {
+				matcher, err := licenses.NewFromReader(bytes.NewReader(data))
+				if err != nil {
+					t.Fatalf("%s automaton: %v", name, err)
+				}
+				result, err := matcher.Match(context.Background(), []byte("alpha quot beta"))
+				if err != nil || len(result.Detections) != 1 || result.Detections[0].Expression != "MIT" {
+					t.Fatalf("%s automaton: result = %#v, error = %v", name, result, err)
+				}
+				result, err = matcher.Match(context.Background(), []byte("gamma quot delta"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				wantNotice := test.flags != corpus.FlagLicenseText
+				if (len(result.Detections) != 0) != wantNotice {
+					t.Fatalf("%s automaton: notice detections = %#v, want notice present: %t", name, result.Detections, wantNotice)
+				}
 			}
 		})
 	}
