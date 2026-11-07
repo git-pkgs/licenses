@@ -104,11 +104,12 @@ func TestRoundTrip(t *testing.T) {
 	if !slices.Equal(got.Automaton.EdgeStarts, index.Automaton.EdgeStarts) {
 		t.Fatalf("edge starts = %#v, want %#v", got.Automaton.EdgeStarts, index.Automaton.EdgeStarts)
 	}
-	if !slices.Equal(got.Automaton.EdgeTokens, index.Automaton.EdgeTokens) {
-		t.Fatalf("edge tokens = %#v, want %#v", got.Automaton.EdgeTokens, index.Automaton.EdgeTokens)
+	if !slices.Equal(got.Automaton.DenseEdgeTokens(), index.Automaton.DenseEdgeTokens()) {
+		t.Fatalf("edge tokens = %#v, want %#v",
+			got.Automaton.DenseEdgeTokens(), index.Automaton.DenseEdgeTokens())
 	}
-	if !slices.Equal(got.Automaton.TerminalHeads, index.Automaton.TerminalHeads) {
-		t.Fatalf("terminal heads = %#v, want %#v", got.Automaton.TerminalHeads, index.Automaton.TerminalHeads)
+	if !reflect.DeepEqual(got.Automaton.Outputs, index.Automaton.Outputs) {
+		t.Fatalf("outputs = %#v, want %#v", got.Automaton.Outputs, index.Automaton.Outputs)
 	}
 	if len(got.SPDXKeys) != 2 ||
 		got.SPDXKeys["apache-2.0"] != "apache-2.0" ||
@@ -119,6 +120,60 @@ func TestRoundTrip(t *testing.T) {
 		got.ReportingIDs["apache-2.0"] != "Apache-2.0" ||
 		got.ReportingIDs["bsd-new"] != "BSD-3-Clause" {
 		t.Fatalf("reporting IDs = %#v", got.ReportingIDs)
+	}
+}
+
+func TestRuntimeReadDiscardsStoredRuleTokens(t *testing.T) {
+	t.Parallel()
+
+	index := automatonTestIndex(t)
+	var encoded bytes.Buffer
+	if err := Write(&encoded, index); err != nil {
+		t.Fatal(err)
+	}
+	got, err := ReadRuntime(bytes.NewReader(encoded.Bytes()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for ruleIndex, rule := range got.Rules {
+		want := index.Rules[ruleIndex].Tokens
+		if rule.Tokens != nil {
+			t.Fatalf("rule %d retained %d tokens", ruleIndex, len(rule.Tokens))
+		}
+		if rule.TokenCount != uint32(len(want)) {
+			t.Fatalf("rule %d token count = %d, want %d", ruleIndex, rule.TokenCount, len(want))
+		}
+		hash := uint64(tokenHashOffset)
+		for _, token := range want {
+			hash = addTokenHash(hash, token)
+		}
+		if rule.TokenHash != hash {
+			t.Fatalf("rule %d token hash = %d, want %d", ruleIndex, rule.TokenHash, hash)
+		}
+	}
+	if len(got.Automaton.EdgeTokens) != 0 || got.Automaton.EdgeCount() == 0 {
+		t.Fatal("runtime automaton edge tokens were not compacted")
+	}
+	if len(got.Automaton.EdgeStarts) != 0 || len(got.Automaton.Failures) != 0 {
+		t.Fatal("runtime automaton node indexes were not compacted")
+	}
+	if !slices.Equal(got.Automaton.DenseEdgeStarts(), index.Automaton.DenseEdgeStarts()) {
+		t.Fatal("runtime edge starts differ")
+	}
+	if !slices.Equal(got.Automaton.DenseEdgeTokens(), index.Automaton.DenseEdgeTokens()) {
+		t.Fatal("runtime edge tokens differ")
+	}
+}
+
+func TestRuntimeReadRejectsOmittedAutomaton(t *testing.T) {
+	t.Parallel()
+
+	var encoded bytes.Buffer
+	if err := encode(&encoded, automatonTestIndex(t), FormatVersion, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReadRuntime(bytes.NewReader(encoded.Bytes())); err == nil {
+		t.Fatal("ReadRuntime accepted a corpus without a stored automaton")
 	}
 }
 
@@ -261,6 +316,23 @@ func TestReadEdgeTokensRejectsInvalidWidth(t *testing.T) {
 	}
 }
 
+func TestReadEdgeTokens16RejectsWideToken(t *testing.T) {
+	t.Parallel()
+
+	edgeStarts := []uint32{0, 1, 1}
+	var encoded bytes.Buffer
+	if err := writeEdgeTokens(&encoded, edgeStarts, []uint32{70_000}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readEdgeTokensAs[uint16](
+		bufio.NewReader(&encoded),
+		storedEdgeStarts(edgeStarts),
+		uint32(^uint16(0)),
+	); err == nil {
+		t.Fatal("readEdgeTokens16 accepted a wide token")
+	}
+}
+
 func TestReadEdgeTokensRejectsZeroDelta(t *testing.T) {
 	t.Parallel()
 
@@ -278,16 +350,27 @@ func TestTerminalHeadsRoundTrip(t *testing.T) {
 	t.Parallel()
 
 	want := []uint32{aho.None, 2, aho.None, 0, aho.None, 1}
+	links := make([]uint32, len(want))
+	for index := range links {
+		links[index] = aho.None
+	}
 	var encoded bytes.Buffer
-	if err := writeTerminalHeads(&encoded, want); err != nil {
+	if err := writeTerminalHeads(&encoded, aho.NewSparseOutputs(links, want)); err != nil {
 		t.Fatal(err)
 	}
 	got, err := readTerminalHeads(bufio.NewReader(&encoded), len(want))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(got, want) {
-		t.Fatalf("terminal heads = %#v, want %#v", got, want)
+	gotHeads := make([]uint32, len(want))
+	for index := range gotHeads {
+		gotHeads[index] = aho.None
+	}
+	got.RangeTerminalHeads(func(index, head uint32) {
+		gotHeads[index] = head
+	})
+	if !slices.Equal(gotHeads, want) {
+		t.Fatalf("terminal heads = %#v, want %#v", gotHeads, want)
 	}
 }
 

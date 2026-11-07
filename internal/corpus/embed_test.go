@@ -40,10 +40,11 @@ func TestEmbeddedCorpus(t *testing.T) {
 		if index.Automaton.Failures[node] == 0 {
 			zeroFailures++
 		}
-		if index.Automaton.OutputLinks[node] == ^uint32(0) {
+		link, head := index.Automaton.Outputs.Get(uint32(node))
+		if link == ^uint32(0) {
 			noOutputLinks++
 		}
-		if index.Automaton.TerminalHeads[node] == ^uint32(0) {
+		if head == ^uint32(0) {
 			noTerminals++
 		}
 	}
@@ -174,10 +175,10 @@ func BenchmarkEmbeddedCorpusBuildFailureLinks(b *testing.B) {
 	}
 	b.ResetTimer()
 	for b.Loop() {
-		failures, outputLinks, err := aho.BuildFailureLinks(
+		failures, outputLinks, err := aho.BuildFailureLinksSparse(
 			index.Automaton.EdgeStarts,
 			index.Automaton.EdgeTokens,
-			index.Automaton.TerminalHeads,
+			index.Automaton.Outputs,
 		)
 		if err != nil {
 			b.Fatal(err)

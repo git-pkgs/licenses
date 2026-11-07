@@ -32,7 +32,7 @@ func BenchmarkMatcherColdStart(b *testing.B) {
 	runtime.ReadMemStats(&before)
 	b.ResetTimer()
 	for b.Loop() {
-		index, err := corpus.Load()
+		index, err := corpus.LoadRuntime()
 		if err != nil {
 			b.Fatal(err)
 		}

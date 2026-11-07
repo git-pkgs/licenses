@@ -1,6 +1,7 @@
 package aho
 
 import (
+	"reflect"
 	"slices"
 	"testing"
 )
@@ -74,10 +75,10 @@ func TestBuildFailureLinksReconstructsAutomaton(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	failures, outputLinks, err := BuildFailureLinks(
+	failures, outputLinks, err := BuildFailureLinksSparse(
 		automaton.EdgeStarts,
 		automaton.EdgeTokens,
-		automaton.TerminalHeads,
+		automaton.Outputs,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -85,8 +86,8 @@ func TestBuildFailureLinksReconstructsAutomaton(t *testing.T) {
 	if !slices.Equal(failures, automaton.Failures) {
 		t.Fatalf("failures differ:\n got: %#v\nwant: %#v", failures, automaton.Failures)
 	}
-	if !slices.Equal(outputLinks, automaton.OutputLinks) {
-		t.Fatalf("output links differ:\n got: %#v\nwant: %#v", outputLinks, automaton.OutputLinks)
+	if !slices.Equal(outputLinks, denseOutputLinks(automaton.Outputs)) {
+		t.Fatalf("output links differ:\n got: %#v\nwant: %#v", outputLinks, automaton.Outputs)
 	}
 }
 
@@ -104,10 +105,10 @@ func TestBuildFailureLinksParallelReconstructsAutomaton(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	failures, outputLinks, err := BuildFailureLinks(
+	failures, outputLinks, err := BuildFailureLinksSparse(
 		automaton.EdgeStarts,
 		automaton.EdgeTokens,
-		automaton.TerminalHeads,
+		automaton.Outputs,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -115,7 +116,7 @@ func TestBuildFailureLinksParallelReconstructsAutomaton(t *testing.T) {
 	if !slices.Equal(failures, automaton.Failures) {
 		t.Fatal("parallel failure links differ")
 	}
-	if !slices.Equal(outputLinks, automaton.OutputLinks) {
+	if !slices.Equal(outputLinks, denseOutputLinks(automaton.Outputs)) {
 		t.Fatal("parallel output links differ")
 	}
 }
@@ -192,6 +193,48 @@ func TestBuildRootTableIndexesRootEdges(t *testing.T) {
 	}
 }
 
+func TestCompactNodeIndexesPreservesTransitions(t *testing.T) {
+	t.Parallel()
+
+	automaton, err := Build([]Pattern{
+		{Tokens: []uint32{2, 5}, Value: 0},
+		{Tokens: []uint32{7}, Value: 1},
+		{Tokens: []uint32{5, 2}, Value: 2},
+		{Tokens: []uint32{2, 5, 7}, Value: 3},
+	}, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dense := automaton
+	automaton.CompactNodeIndexes()
+	if len(automaton.EdgeStarts) != 0 || len(automaton.Failures) != 0 {
+		t.Fatal("node indexes were not compacted")
+	}
+	if !slices.Equal(automaton.DenseEdgeStarts(), dense.EdgeStarts) {
+		t.Fatal("dense edge starts differ after compaction")
+	}
+	for index, failure := range dense.Failures {
+		if automaton.failure(uint32(index)) != failure {
+			t.Fatalf("failure %d differs after compaction", index)
+		}
+	}
+	if err := automaton.Validate(4); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, input := range [][]uint32{{2, 5, 7}, {1, 2, 3, 4, 5, 6, 7, 8, 9}, {100}} {
+		var denseState, compactState uint32
+		for position, token := range input {
+			denseState = dense.Next(denseState, token)
+			compactState = automaton.Next(compactState, token)
+			if compactState != denseState {
+				t.Fatalf("input %v: state at %d differs: compact=%d dense=%d",
+					input, position, compactState, denseState)
+			}
+		}
+	}
+}
+
 func TestBuildRejectsZeroToken(t *testing.T) {
 	t.Parallel()
 
@@ -215,10 +258,9 @@ func TestValidateRejectsCyclicOutputChain(t *testing.T) {
 
 func equalAutomata(first, second Automaton) bool {
 	return slices.Equal(first.EdgeStarts, second.EdgeStarts) &&
-		slices.Equal(first.EdgeTokens, second.EdgeTokens) &&
+		slices.Equal(first.DenseEdgeTokens(), second.DenseEdgeTokens()) &&
 		slices.Equal(first.Failures, second.Failures) &&
-		slices.Equal(first.OutputLinks, second.OutputLinks) &&
-		slices.Equal(first.TerminalHeads, second.TerminalHeads) &&
+		reflect.DeepEqual(first.Outputs, second.Outputs) &&
 		slices.Equal(first.OutputNext, second.OutputNext) &&
 		slices.Equal(first.rootNext, second.rootNext)
 }

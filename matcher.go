@@ -192,7 +192,7 @@ func New(options ...Option) (*Matcher, error) {
 	}
 
 	embeddedEngineOnce.Do(func() {
-		index, err := corpus.Load()
+		index, err := corpus.LoadRuntime()
 		if err != nil {
 			embeddedEngineErr = err
 			return
@@ -242,7 +242,13 @@ func newMatchEngine(index corpus.Index) (*matchEngine, error) {
 			rule.Flags&(corpus.FlagContinuous|corpus.FlagRequiredPhrase) != 0 {
 			hasStrictStopwords = true
 		}
-		ruleTokenLengths[ruleIndex] = uint32(len(rule.Tokens))
+		tokenCount := rule.TokenCount
+		tokenHash := rule.TokenHash
+		if len(rule.Tokens) != 0 {
+			tokenCount = uint32(len(rule.Tokens))
+			tokenHash = hashRuleTokens(rule.Tokens)
+		}
+		ruleTokenLengths[ruleIndex] = tokenCount
 		metadataIndex, exists := metadataIndexes[rule.Expression]
 		if !exists {
 			scanCodeIDs := expressionIDs(rule.Expression)
@@ -256,11 +262,10 @@ func newMatchEngine(index corpus.Index) (*matchEngine, error) {
 			})
 		}
 		ruleMetadata[ruleIndex] = metadataIndex
-		if len(rule.Tokens) == 0 {
+		if tokenCount == 0 {
 			continue
 		}
-		hash := hashRuleTokens(rule.Tokens)
-		hashes[hash] = append(hashes[hash], uint32(ruleIndex))
+		hashes[tokenHash] = append(hashes[tokenHash], uint32(ruleIndex))
 	}
 	return &matchEngine{
 		info: CorpusInfo{
@@ -508,6 +513,7 @@ func stopwordsAlign(match exactMatch, query, rule []uint32) bool {
 }
 
 const maxExactMatchCandidates = 1_000_000
+const initialExactMatchOutputCapacity = 4
 
 // Large candidate sets use two full automaton passes so the retained slice is
 // allocated once at its exact, bounded size.
@@ -529,7 +535,8 @@ func (e *matchEngine) collectAhoMatches(
 	tokens []tokenize.ID,
 ) ([]exactMatch, error) {
 	var candidates []exactMatch
-	var outputs []uint32
+	var outputBuffer [initialExactMatchOutputCapacity]uint32
+	outputs := outputBuffer[:0]
 	state := uint32(0)
 	for position, token := range tokens {
 		if position&4095 == 0 {

@@ -68,6 +68,8 @@ type Rule struct {
 	Expression    string
 	Text          []byte
 	Tokens        []uint32
+	TokenCount    uint32
+	TokenHash     uint64
 	StopwordAfter []uint32
 	Flags         uint16
 	Relevance     uint8
@@ -321,16 +323,17 @@ func writeAutomatonSection(w io.Writer, version uint64, automaton aho.Automaton,
 
 func writeAutomaton(w io.Writer, automaton aho.Automaton) error {
 	nodeCount := automaton.NodeCount()
+	edgeStarts := automaton.DenseEdgeStarts()
 	if err := writeUvarint(w, uint64(nodeCount)); err != nil {
 		return err
 	}
-	if err := writeEdgeCounts(w, automaton.EdgeStarts); err != nil {
+	if err := writeEdgeCounts(w, edgeStarts); err != nil {
 		return err
 	}
-	if err := writeTerminalHeads(w, automaton.TerminalHeads); err != nil {
+	if err := writeTerminalHeads(w, automaton.Outputs); err != nil {
 		return err
 	}
-	if err := writeEdgeTokens(w, automaton.EdgeStarts, automaton.EdgeTokens); err != nil {
+	if err := writeEdgeTokens(w, edgeStarts, automaton.DenseEdgeTokens()); err != nil {
 		return err
 	}
 	for _, next := range automaton.OutputNext {
@@ -402,31 +405,28 @@ func writeEdgeCounts(w io.Writer, edgeStarts []uint32) error {
 	return nil
 }
 
-func writeTerminalHeads(w io.Writer, terminalHeads []uint32) error {
-	count := 0
-	for _, head := range terminalHeads {
-		if head != aho.None {
-			count++
-		}
-	}
-	if err := writeUvarint(w, uint64(count)); err != nil {
+func writeTerminalHeads(w io.Writer, outputs aho.SparseOutputs) error {
+	if err := writeUvarint(w, uint64(outputs.TerminalCount())); err != nil {
 		return err
 	}
 	var previous uint64
-	for node, head := range terminalHeads {
-		if head == aho.None {
-			continue
+	var writeErr error
+	outputs.RangeTerminalHeads(func(node, head uint32) {
+		if writeErr != nil {
+			return
 		}
 		current := uint64(node) + 1
 		if err := writeUvarint(w, current-previous); err != nil {
-			return err
+			writeErr = err
+			return
 		}
 		if err := writeUvarint(w, uint64(head)); err != nil {
-			return err
+			writeErr = err
+			return
 		}
 		previous = current
-	}
-	return nil
+	})
+	return writeErr
 }
 
 func writeOptional(w io.Writer, value uint32) error {
@@ -493,6 +493,15 @@ func writeUvarint(w io.Writer, value uint64) error {
 
 // Read decodes a corpus index and checks its framing and limits.
 func Read(r io.Reader) (Index, error) {
+	return read(r, true)
+}
+
+// ReadRuntime decodes an index without retaining tokens already stored in its automaton.
+func ReadRuntime(r io.Reader) (Index, error) {
+	return read(r, false)
+}
+
+func read(r io.Reader, retainRuleTokens bool) (Index, error) {
 	zr, err := gzip.NewReader(r)
 	if err != nil {
 		return Index{}, fmt.Errorf("corpus: open compressed index: %w", err)
@@ -504,64 +513,25 @@ func Read(r io.Reader) (Index, error) {
 	if err != nil {
 		return Index{}, err
 	}
-	vocabulary, err := readStrings(br, maxWordCount)
-	if err != nil {
-		return Index{}, fmt.Errorf("corpus: read vocabulary: %w", err)
-	}
-	for index, word := range vocabulary {
-		if word == "" {
-			return Index{}, fmt.Errorf("corpus: vocabulary word %d is empty", index)
-		}
-		if index > 0 && vocabulary[index-1] >= word {
-			return Index{}, fmt.Errorf("corpus: vocabulary is not strictly sorted at %q", word)
-		}
-	}
-	stopwordIDs, err := readUint32s(br, maxWordCount)
-	if err != nil {
-		return Index{}, fmt.Errorf("corpus: read stopword tokens: %w", err)
-	}
-	var previousStopword uint32
-	for index, stopword := range stopwordIDs {
-		if stopword == 0 || uint64(stopword) > uint64(len(vocabulary)) {
-			return Index{}, fmt.Errorf("corpus: invalid stopword token %d", stopword)
-		}
-		if index > 0 && stopword <= previousStopword {
-			return Index{}, fmt.Errorf("corpus: stopword tokens are not strictly sorted at %d", stopword)
-		}
-		previousStopword = stopword
-	}
-	count, err := readCount(br, maxRuleCount, "rule")
+	vocabulary, err := readVocabulary(br)
 	if err != nil {
 		return Index{}, err
 	}
-	rules := make([]Rule, count)
-	for i := range rules {
-		rules[i], err = readRule(br)
-		if err != nil {
-			return Index{}, fmt.Errorf("corpus: read rule %d: %w", i, err)
-		}
-		if i > 0 && rules[i-1].ID >= rules[i].ID {
-			return Index{}, fmt.Errorf("corpus: rules are not strictly sorted at %q", rules[i].ID)
-		}
-		for _, token := range rules[i].Tokens {
-			if token == 0 || uint64(token) > uint64(len(vocabulary)) {
-				return Index{}, fmt.Errorf("corpus: rule %q has invalid token %d", rules[i].ID, token)
-			}
-		}
-		var previous uint32
-		for position, after := range rules[i].StopwordAfter {
-			if after == 0 || uint64(after) >= uint64(len(rules[i].Tokens)) {
-				return Index{}, fmt.Errorf("corpus: rule %q has invalid stopword position %d", rules[i].ID, after)
-			}
-			if position > 0 && after < previous {
-				return Index{}, fmt.Errorf("corpus: rule %q stopword positions are not sorted at %d", rules[i].ID, after)
-			}
-			previous = after
-		}
-	}
-	automaton, err := readAutomatonSection(br, version, rules)
+	stopwordIDs, err := readStopwordIDs(br, len(vocabulary))
 	if err != nil {
 		return Index{}, err
+	}
+	rules, err := readRules(br, len(vocabulary), retainRuleTokens)
+	if err != nil {
+		return Index{}, err
+	}
+	compactEdgeTokens := !retainRuleTokens && len(vocabulary) <= int(^uint16(0))
+	automaton, err := readAutomatonSection(br, version, rules, retainRuleTokens, compactEdgeTokens)
+	if err != nil {
+		return Index{}, err
+	}
+	if !retainRuleTokens && !compactEdgeTokens {
+		automaton.CompactNodeIndexes()
 	}
 	spdxKeys, err := readStringMap(br, maxRuleCount)
 	if err != nil {
@@ -577,7 +547,7 @@ func Read(r io.Reader) (Index, error) {
 		}
 		return Index{}, fmt.Errorf("corpus: finish index: %w", err)
 	}
-	info.RuleCount = count
+	info.RuleCount = len(rules)
 	return Index{
 		Info:         info,
 		Vocabulary:   vocabulary,
@@ -587,6 +557,75 @@ func Read(r io.Reader) (Index, error) {
 		SPDXKeys:     spdxKeys,
 		ReportingIDs: reportingIDs,
 	}, nil
+}
+
+func readVocabulary(r *bufio.Reader) ([]string, error) {
+	vocabulary, err := readStrings(r, maxWordCount)
+	if err != nil {
+		return nil, fmt.Errorf("corpus: read vocabulary: %w", err)
+	}
+	for index, word := range vocabulary {
+		if word == "" {
+			return nil, fmt.Errorf("corpus: vocabulary word %d is empty", index)
+		}
+		if index > 0 && vocabulary[index-1] >= word {
+			return nil, fmt.Errorf("corpus: vocabulary is not strictly sorted at %q", word)
+		}
+	}
+	return vocabulary, nil
+}
+
+func readStopwordIDs(r *bufio.Reader, vocabularySize int) ([]uint32, error) {
+	stopwordIDs, err := readUint32s(r, maxWordCount)
+	if err != nil {
+		return nil, fmt.Errorf("corpus: read stopword tokens: %w", err)
+	}
+	var previous uint32
+	for index, stopword := range stopwordIDs {
+		if stopword == 0 || uint64(stopword) > uint64(vocabularySize) {
+			return nil, fmt.Errorf("corpus: invalid stopword token %d", stopword)
+		}
+		if index > 0 && stopword <= previous {
+			return nil, fmt.Errorf("corpus: stopword tokens are not strictly sorted at %d", stopword)
+		}
+		previous = stopword
+	}
+	return stopwordIDs, nil
+}
+
+func readRules(r *bufio.Reader, vocabularySize int, retainTokens bool) ([]Rule, error) {
+	count, err := readCount(r, maxRuleCount, "rule")
+	if err != nil {
+		return nil, err
+	}
+	rules := make([]Rule, count)
+	for index := range rules {
+		rules[index], err = readRule(r, vocabularySize, retainTokens)
+		if err != nil {
+			return nil, fmt.Errorf("corpus: read rule %d: %w", index, err)
+		}
+		if index > 0 && rules[index-1].ID >= rules[index].ID {
+			return nil, fmt.Errorf("corpus: rules are not strictly sorted at %q", rules[index].ID)
+		}
+		if err := validateRuleStopwordPositions(rules[index]); err != nil {
+			return nil, err
+		}
+	}
+	return rules, nil
+}
+
+func validateRuleStopwordPositions(rule Rule) error {
+	var previous uint32
+	for position, after := range rule.StopwordAfter {
+		if after == 0 || after >= rule.TokenCount {
+			return fmt.Errorf("corpus: rule %q has invalid stopword position %d", rule.ID, after)
+		}
+		if position > 0 && after < previous {
+			return fmt.Errorf("corpus: rule %q stopword positions are not sorted at %d", rule.ID, after)
+		}
+		previous = after
+	}
+	return nil
 }
 
 func readStringMap(r *bufio.Reader, limit uint64) (map[string]string, error) {
@@ -646,7 +685,7 @@ func readHeader(r *bufio.Reader) (uint64, Info, error) {
 	return version, Info{Version: corpusVersion, SourceCommit: sourceCommit}, nil
 }
 
-func readRule(r *bufio.Reader) (Rule, error) {
+func readRule(r *bufio.Reader, wordCount int, retainTokens bool) (Rule, error) {
 	id, err := readString(r)
 	if err != nil {
 		return Rule{}, err
@@ -659,7 +698,7 @@ func readRule(r *bufio.Reader) (Rule, error) {
 	if _, err := io.ReadFull(r, metadata[:]); err != nil {
 		return Rule{}, fmt.Errorf("read metadata: %w", err)
 	}
-	tokens, err := readUint32s(r, maxTokenCount)
+	tokens, tokenCount, tokenHash, err := readRuleTokens(r, wordCount, retainTokens)
 	if err != nil {
 		return Rule{}, err
 	}
@@ -671,10 +710,53 @@ func readRule(r *bufio.Reader) (Rule, error) {
 		ID:            id,
 		Expression:    expression,
 		Tokens:        tokens,
+		TokenCount:    tokenCount,
+		TokenHash:     tokenHash,
 		StopwordAfter: stopwordAfter,
 		Flags:         binary.LittleEndian.Uint16(metadata[:2]),
 		Relevance:     metadata[2],
 	}, nil
+}
+
+const (
+	tokenHashOffset = 14695981039346656037
+	tokenHashPrime  = 1099511628211
+)
+
+func readRuleTokens(r *bufio.Reader, wordCount int, retain bool) ([]uint32, uint32, uint64, error) {
+	count, err := readCount(r, maxTokenCount, "integer list")
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	var tokens []uint32
+	if retain {
+		tokens = make([]uint32, count)
+	}
+	hash := uint64(tokenHashOffset)
+	for index := range count {
+		value, err := binary.ReadUvarint(r)
+		if err != nil {
+			return nil, 0, 0, fmt.Errorf("read integer: %w", err)
+		}
+		if value == 0 || value > uint64(wordCount) {
+			return nil, 0, 0, fmt.Errorf("corpus: invalid rule token %d", value)
+		}
+		token := uint32(value)
+		if retain {
+			tokens[index] = token
+		}
+		hash = addTokenHash(hash, token)
+	}
+	return tokens, uint32(count), hash, nil
+}
+
+func addTokenHash(hash uint64, token uint32) uint64 {
+	for range 4 {
+		hash ^= uint64(byte(token))
+		hash *= tokenHashPrime
+		token >>= 8
+	}
+	return hash
 }
 
 func readUint32s(r *bufio.Reader, limit uint64) ([]uint32, error) {
@@ -711,9 +793,15 @@ func readStrings(r *bufio.Reader, limit uint64) ([]string, error) {
 	return values, nil
 }
 
-func readAutomatonSection(r *bufio.Reader, version uint64, rules []Rule) (aho.Automaton, error) {
+func readAutomatonSection(
+	r *bufio.Reader,
+	version uint64,
+	rules []Rule,
+	retainRuleTokens bool,
+	compactEdgeTokens bool,
+) (aho.Automaton, error) {
 	if version == legacyFormatVersion {
-		return readAutomaton(r, len(rules))
+		return readAutomaton(r, len(rules), compactEdgeTokens)
 	}
 	marker, err := r.ReadByte()
 	if err != nil {
@@ -721,8 +809,11 @@ func readAutomatonSection(r *bufio.Reader, version uint64, rules []Rule) (aho.Au
 	}
 	switch marker {
 	case automatonStored:
-		return readAutomaton(r, len(rules))
+		return readAutomaton(r, len(rules), compactEdgeTokens)
 	case automatonOmitted:
+		if !retainRuleTokens {
+			return aho.Automaton{}, errors.New("corpus: runtime index omits its automaton")
+		}
 		return rebuildAutomaton(rules)
 	default:
 		return aho.Automaton{}, fmt.Errorf("corpus: invalid automaton marker %d", marker)
@@ -766,7 +857,7 @@ func rebuildPatterns(rules []Rule) ([]aho.Pattern, error) {
 	return patterns, nil
 }
 
-func readAutomaton(r *bufio.Reader, valueCount int) (aho.Automaton, error) {
+func readAutomaton(r *bufio.Reader, valueCount int, compactEdgeTokens bool) (aho.Automaton, error) {
 	nodeCount, err := readCount(r, maxNodeCount, "automaton node")
 	if err != nil {
 		return aho.Automaton{}, err
@@ -774,7 +865,13 @@ func readAutomaton(r *bufio.Reader, valueCount int) (aho.Automaton, error) {
 	if nodeCount == 0 {
 		return aho.Automaton{}, errors.New("corpus: automaton has no root")
 	}
-	edgeStarts, err := readEdgeCounts(r, nodeCount)
+	var edgeStarts []uint32
+	var compactEdgeStarts aho.CompactEdgeStarts
+	if compactEdgeTokens {
+		compactEdgeStarts, err = readCompactEdgeStarts(r, nodeCount)
+	} else {
+		edgeStarts, err = readEdgeCounts(r, nodeCount)
+	}
 	if err != nil {
 		return aho.Automaton{}, err
 	}
@@ -784,7 +881,17 @@ func readAutomaton(r *bufio.Reader, valueCount int) (aho.Automaton, error) {
 		return aho.Automaton{}, err
 	}
 
-	edgeTokens, err := readEdgeTokens(r, edgeStarts)
+	var edgeTokens []uint32
+	var edgeTokens16 []uint16
+	if compactEdgeTokens {
+		edgeTokens16, err = readEdgeTokensAs[uint16](
+			r,
+			compactEdgeStarts,
+			uint32(^uint16(0)),
+		)
+	} else {
+		edgeTokens, err = readEdgeTokens(r, edgeStarts)
+	}
 	if err != nil {
 		return aho.Automaton{}, err
 	}
@@ -792,18 +899,32 @@ func readAutomaton(r *bufio.Reader, valueCount int) (aho.Automaton, error) {
 	if err != nil {
 		return aho.Automaton{}, err
 	}
-	failures, outputLinks, err := aho.BuildFailureLinks(edgeStarts, edgeTokens, terminalHeads)
+	if compactEdgeTokens {
+		automaton, err := aho.RestoreCompact(
+			compactEdgeStarts,
+			edgeTokens16,
+			terminalHeads,
+			outputNext,
+		)
+		if err != nil {
+			return aho.Automaton{}, fmt.Errorf("corpus: build automaton links: %w", err)
+		}
+		if err := automaton.Validate(valueCount); err != nil {
+			return aho.Automaton{}, fmt.Errorf("corpus: invalid automaton: %w", err)
+		}
+		return automaton, nil
+	}
+	failures, outputLinks, err := aho.BuildFailureLinksSparse(edgeStarts, edgeTokens, terminalHeads)
 	if err != nil {
 		return aho.Automaton{}, fmt.Errorf("corpus: build automaton links: %w", err)
 	}
 
 	automaton := aho.Automaton{
-		EdgeStarts:    edgeStarts,
-		EdgeTokens:    edgeTokens,
-		Failures:      failures,
-		OutputLinks:   outputLinks,
-		TerminalHeads: terminalHeads,
-		OutputNext:    outputNext,
+		EdgeStarts: edgeStarts,
+		EdgeTokens: edgeTokens,
+		Failures:   failures,
+		Outputs:    terminalHeads.WithOutputLinks(outputLinks),
+		OutputNext: outputNext,
 	}
 	automaton.BuildRootTable()
 	if err := automaton.Validate(valueCount); err != nil {
@@ -813,7 +934,34 @@ func readAutomaton(r *bufio.Reader, valueCount int) (aho.Automaton, error) {
 }
 
 func readEdgeTokens(r *bufio.Reader, edgeStarts []uint32) ([]uint32, error) {
-	edgeCount := int(edgeStarts[len(edgeStarts)-1])
+	return readEdgeTokensAs[uint32](r, storedEdgeStarts(edgeStarts), ^uint32(0))
+}
+
+type storedEdgeStarts []uint32
+
+func (s storedEdgeStarts) Len() int {
+	return len(s)
+}
+
+func (s storedEdgeStarts) Get(index uint32) uint32 {
+	return s[index]
+}
+
+type storedEdgeStartReader interface {
+	Len() int
+	Get(uint32) uint32
+}
+
+type storedEdgeToken interface {
+	~uint16 | ~uint32
+}
+
+func readEdgeTokensAs[T storedEdgeToken, S storedEdgeStartReader](
+	r *bufio.Reader,
+	edgeStarts S,
+	maxToken uint32,
+) ([]T, error) {
+	edgeCount := int(edgeStarts.Get(uint32(edgeStarts.Len() - 1)))
 	width, err := readUint32(r, "edge token width")
 	if err != nil {
 		return nil, err
@@ -829,11 +977,11 @@ func readEdgeTokens(r *bufio.Reader, edgeStarts []uint32) ([]uint32, error) {
 		return nil, fmt.Errorf("corpus: read automaton edge tokens: %w", err)
 	}
 
-	edgeTokens := make([]uint32, edgeCount)
+	edgeTokens := make([]T, edgeCount)
 	position := 0
-	for node := 0; node+1 < len(edgeStarts); node++ {
+	for node := 0; node+1 < edgeStarts.Len(); node++ {
 		var previous uint32
-		for edge := edgeStarts[node]; edge < edgeStarts[node+1]; edge++ {
+		for edge := edgeStarts.Get(uint32(node)); edge < edgeStarts.Get(uint32(node+1)); edge++ {
 			var delta uint32
 			switch width {
 			case shortTokenBit:
@@ -842,11 +990,11 @@ func readEdgeTokens(r *bufio.Reader, edgeStarts []uint32) ([]uint32, error) {
 				delta = binary.LittleEndian.Uint32(encoded[position:])
 			}
 			position += byteWidth
-			if delta == 0 || uint64(previous)+uint64(delta) > uint64(^uint32(0)) {
+			if delta == 0 || uint64(previous)+uint64(delta) > uint64(maxToken) {
 				return nil, fmt.Errorf("corpus: invalid edge token delta at edge %d", edge)
 			}
-			edgeTokens[edge] = previous + delta
-			previous = edgeTokens[edge]
+			previous += delta
+			edgeTokens[edge] = T(previous)
 		}
 	}
 	return edgeTokens, nil
@@ -885,33 +1033,74 @@ func readEdgeCounts(r *bufio.Reader, nodeCount int) ([]uint32, error) {
 	return edgeStarts, nil
 }
 
-func readTerminalHeads(r *bufio.Reader, nodeCount int) ([]uint32, error) {
+func readCompactEdgeStarts(r *bufio.Reader, nodeCount int) (aho.CompactEdgeStarts, error) {
+	bitCount := trieBitFactor*nodeCount - 1
+	encoded := make([]byte, (bitCount+bitsPerByte-1)/bitsPerByte)
+	if _, err := io.ReadFull(r, encoded); err != nil {
+		return aho.CompactEdgeStarts{}, fmt.Errorf("corpus: read automaton edge counts: %w", err)
+	}
+	if padding := uint(bitCount % bitsPerByte); padding != 0 && encoded[len(encoded)-1]>>padding != 0 {
+		return aho.CompactEdgeStarts{}, errors.New("corpus: non-zero automaton edge padding")
+	}
+
+	nodes := make([]uint32, 0)
+	corrections := make([]int32, 0)
+	node := 0
+	var edgeCount, previousEdgeCount uint32
+	for position := range bitCount {
+		if encoded[position/bitsPerByte]&(1<<(position%bitsPerByte)) != 0 {
+			edgeCount++
+			if edgeCount >= uint32(nodeCount) {
+				return aho.CompactEdgeStarts{}, errors.New("corpus: too many automaton edges")
+			}
+			continue
+		}
+		if node >= nodeCount {
+			return aho.CompactEdgeStarts{}, errors.New("corpus: too many automaton nodes")
+		}
+		if edgeCount-previousEdgeCount != 1 {
+			nodes = append(nodes, uint32(node))
+			corrections = append(corrections, int32(edgeCount)-int32(node+1))
+		}
+		previousEdgeCount = edgeCount
+		node++
+	}
+	if node != nodeCount || edgeCount != uint32(nodeCount-1) {
+		return aho.CompactEdgeStarts{}, errors.New("corpus: inconsistent automaton edge counts")
+	}
+	table, err := aho.NewCompactEdgeStartsFromCorrections(nodeCount, nodes, corrections)
+	if err != nil {
+		return aho.CompactEdgeStarts{}, fmt.Errorf("corpus: compact automaton edge counts: %w", err)
+	}
+	return table, nil
+}
+
+func readTerminalHeads(r *bufio.Reader, nodeCount int) (aho.SparseOutputs, error) {
 	count, err := readCount(r, uint64(nodeCount), "terminal head")
 	if err != nil {
-		return nil, err
+		return aho.SparseOutputs{}, err
 	}
-	heads := make([]uint32, nodeCount)
-	for node := range heads {
-		heads[node] = aho.None
-	}
+	nodes := make([]uint32, 0, count)
+	heads := make([]uint32, 0, count)
 	var previous uint64
 	for range count {
 		delta, err := binary.ReadUvarint(r)
 		if err != nil {
-			return nil, fmt.Errorf("corpus: read terminal node delta: %w", err)
+			return aho.SparseOutputs{}, fmt.Errorf("corpus: read terminal node delta: %w", err)
 		}
 		if delta == 0 || delta > uint64(nodeCount)-previous {
-			return nil, errors.New("corpus: invalid terminal node delta")
+			return aho.SparseOutputs{}, errors.New("corpus: invalid terminal node delta")
 		}
 		current := previous + delta
 		head, err := readUint32(r, "terminal head")
 		if err != nil {
-			return nil, err
+			return aho.SparseOutputs{}, err
 		}
-		heads[current-1] = head
+		nodes = append(nodes, uint32(current-1))
+		heads = append(heads, head)
 		previous = current
 	}
-	return heads, nil
+	return aho.NewSparseTerminalHeads(nodeCount, nodes, heads), nil
 }
 
 func readOptionalUint32s(r *bufio.Reader, count int, label string) ([]uint32, error) {
