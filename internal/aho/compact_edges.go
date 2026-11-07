@@ -29,9 +29,6 @@ func NewCompactEdgeStartsFromCorrections(
 			if exception > 0 && nodes[exception] <= nodes[exception-1] {
 				return CompactEdgeStarts{}, errors.New("aho: invalid compact edge node")
 			}
-			if nodes[exception] >= uint32(nodeCount) {
-				return CompactEdgeStarts{}, errors.New("aho: invalid compact edge node")
-			}
 			correction = corrections[exception]
 			exception++
 		}
@@ -40,6 +37,9 @@ func NewCompactEdgeStartsFromCorrections(
 			return CompactEdgeStarts{}, errors.New("aho: compact edge offset exceeds 24 bits")
 		}
 		values.set(uint32(boundary), uint32(value))
+	}
+	if exception != len(nodes) {
+		return CompactEdgeStarts{}, errors.New("aho: invalid compact edge node")
 	}
 	return CompactEdgeStarts{values: values}, nil
 }

@@ -11,6 +11,9 @@ type packedUint24 []byte
 func packUint24(values []uint32) packedUint24 {
 	packed := make(packedUint24, len(values)*packedUint24Width)
 	for index, value := range values {
+		if value >= 1<<(packedUint24Width*packedByteBits) {
+			panic("aho: value exceeds 24 bits")
+		}
 		packed.set(uint32(index), value)
 	}
 	return packed

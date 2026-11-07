@@ -17,3 +17,14 @@ func TestPackedUint24RoundTrip(t *testing.T) {
 		t.Fatalf("dense = %v, want %v", got, want)
 	}
 }
+
+func TestPackUint24RejectsOverflow(t *testing.T) {
+	t.Parallel()
+
+	defer func() {
+		if got := recover(); got != "aho: value exceeds 24 bits" {
+			t.Fatalf("panic = %v", got)
+		}
+	}()
+	packUint24([]uint32{1 << 24})
+}

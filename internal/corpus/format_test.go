@@ -165,6 +165,49 @@ func TestRuntimeReadDiscardsStoredRuleTokens(t *testing.T) {
 	}
 }
 
+func TestRuntimeReadWithWideVocabulary(t *testing.T) {
+	t.Parallel()
+
+	index := automatonTestIndex(t)
+	index.Vocabulary = make([]string, 65_536)
+	for word := range index.Vocabulary {
+		index.Vocabulary[word] = fmt.Sprintf("word%05d", word)
+	}
+	var encoded bytes.Buffer
+	if err := Write(&encoded, index); err != nil {
+		t.Fatal(err)
+	}
+	got, err := ReadRuntime(bytes.NewReader(encoded.Bytes()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for ruleIndex, rule := range got.Rules {
+		want := index.Rules[ruleIndex]
+		if rule.Tokens != nil {
+			t.Fatalf("rule %d retained %d tokens", ruleIndex, len(rule.Tokens))
+		}
+		if rule.TokenCount != uint32(len(want.Tokens)) {
+			t.Fatalf("rule %d token count = %d, want %d", ruleIndex, rule.TokenCount, len(want.Tokens))
+		}
+		hash := uint64(tokenHashOffset)
+		for _, token := range want.Tokens {
+			hash = addTokenHash(hash, token)
+		}
+		if rule.TokenHash != hash {
+			t.Fatalf("rule %d token hash = %d, want %d", ruleIndex, rule.TokenHash, hash)
+		}
+	}
+	if !slices.Equal(got.Automaton.DenseEdgeStarts(), index.Automaton.DenseEdgeStarts()) {
+		t.Fatal("runtime edge starts differ")
+	}
+	if !slices.Equal(got.Automaton.DenseEdgeTokens(), index.Automaton.DenseEdgeTokens()) {
+		t.Fatal("runtime edge tokens differ")
+	}
+	if err := got.Automaton.Validate(len(got.Rules)); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestRuntimeReadRejectsOmittedAutomaton(t *testing.T) {
 	t.Parallel()
 
