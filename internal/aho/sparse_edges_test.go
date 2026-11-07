@@ -74,6 +74,13 @@ func TestCompactEdgeStartsRejectsInvalidCorrections(t *testing.T) {
 			want:        "invalid compact edge node",
 		},
 		{
+			name:        "unconsumed trailing node",
+			nodeCount:   2,
+			nodes:       []uint32{0, 5},
+			corrections: []int32{0, 0},
+			want:        "invalid compact edge node",
+		},
+		{
 			name:        "negative offset",
 			nodeCount:   2,
 			nodes:       []uint32{0},
