@@ -12,6 +12,8 @@ import (
 // None is the sentinel used for absent nodes and outputs.
 const None = ^uint32(0)
 
+const binarySearchDivisor = 2
+
 // Pattern associates a token sequence with a caller-defined value.
 type Pattern struct {
 	Tokens []uint32
@@ -20,12 +22,14 @@ type Pattern struct {
 
 // Automaton stores a token trie, failure links, and pattern outputs.
 type Automaton struct {
-	EdgeStarts    []uint32
-	EdgeTokens    []uint32
-	Failures      []uint32
-	OutputLinks   []uint32
-	TerminalHeads []uint32
-	OutputNext    []uint32
+	EdgeStarts   []uint32
+	edgeStarts   CompactEdgeStarts
+	EdgeTokens   []uint32
+	edgeTokens16 []uint16
+	Failures     []uint32
+	failures24   packedUint24
+	Outputs      SparseOutputs
+	OutputNext   []uint32
 
 	// rootNext maps token to state 0's child for that token, or 0 for no
 	// edge. It is derived from EdgeStarts and EdgeTokens by BuildRootTable
@@ -207,24 +211,114 @@ func buildFailures(
 	return failures, outputLinks
 }
 
-// BuildFailureLinks derives failure and output links from a breadth-first trie.
-func BuildFailureLinks(
+// BuildFailureLinksSparse derives failure and output links using sparse terminals.
+func BuildFailureLinksSparse(
 	edgeStarts []uint32,
 	edgeTokens []uint32,
-	terminalHeads []uint32,
+	terminalHeads SparseOutputs,
 ) ([]uint32, []uint32, error) {
+	return buildFailureLinks(edgeStarts, edgeTokens, terminalHeads)
+}
+
+// RestoreCompact builds runtime links from compact stored trie arrays.
+func RestoreCompact(
+	edgeStarts CompactEdgeStarts,
+	edgeTokens []uint16,
+	terminalHeads SparseOutputs,
+	outputNext []uint32,
+) (Automaton, error) {
+	failures := make(packedUint24, terminalHeads.Len()*packedUint24Width)
+	outputLinks, err := buildFailureLinksInto(
+		edgeStarts,
+		edgeTokens,
+		terminalHeads,
+		failures,
+	)
+	if err != nil {
+		return Automaton{}, err
+	}
+	automaton := Automaton{
+		edgeStarts:   edgeStarts,
+		edgeTokens16: edgeTokens,
+		failures24:   failures,
+		Outputs:      terminalHeads.WithOutputLinks(outputLinks),
+		OutputNext:   outputNext,
+	}
+	automaton.BuildRootTable()
+	return automaton, nil
+}
+
+type denseEdgeStarts []uint32
+
+func (d denseEdgeStarts) Len() int {
+	return len(d)
+}
+
+func (d denseEdgeStarts) Get(index uint32) uint32 {
+	return d[index]
+}
+
+type edgeStartLookup interface {
+	Len() int
+	Get(uint32) uint32
+}
+
+type denseFailures []uint32
+
+func (d denseFailures) get(index uint32) uint32 {
+	return d[index]
+}
+
+func (d denseFailures) set(index, value uint32) {
+	d[index] = value
+}
+
+type failureStore interface {
+	get(uint32) uint32
+	set(uint32, uint32)
+}
+
+type edgeToken interface {
+	~uint16 | ~uint32
+}
+
+type terminalLookup interface {
+	Len() int
+	TerminalHead(uint32) uint32
+}
+
+func buildFailureLinks[E edgeToken, T terminalLookup](
+	edgeStarts []uint32,
+	edgeTokens []E,
+	terminalHeads T,
+) ([]uint32, []uint32, error) {
+	failures := make(denseFailures, terminalHeads.Len())
+	outputLinks, err := buildFailureLinksInto(
+		denseEdgeStarts(edgeStarts),
+		edgeTokens,
+		terminalHeads,
+		failures,
+	)
+	return []uint32(failures), outputLinks, err
+}
+
+func buildFailureLinksInto[S edgeStartLookup, E edgeToken, T terminalLookup, F failureStore](
+	edgeStarts S,
+	edgeTokens []E,
+	terminalHeads T,
+	failures F,
+) ([]uint32, error) {
 	const minimumParallelEdges = 256
 
-	nodeCount := len(terminalHeads)
-	if nodeCount == 0 || len(edgeStarts) != nodeCount+1 || len(edgeTokens) != nodeCount-1 {
-		return nil, nil, errors.New("aho: inconsistent trie arrays")
+	nodeCount := terminalHeads.Len()
+	if nodeCount == 0 || edgeStarts.Len() != nodeCount+1 || len(edgeTokens) != nodeCount-1 {
+		return nil, errors.New("aho: inconsistent trie arrays")
 	}
-	failures := make([]uint32, nodeCount)
 	outputLinks := make([]uint32, nodeCount)
 	for node := range outputLinks {
 		outputLinks[node] = None
 	}
-	rootNext := buildRootTable(edgeStarts, edgeTokens)
+	rootNext := buildRootTable(edgeStarts.Get(1), edgeTokens)
 	workerCount := min(runtime.GOMAXPROCS(0), nodeCount)
 	if workerCount == 1 {
 		buildFailureLinkRange(
@@ -237,7 +331,7 @@ func BuildFailureLinks(
 			1,
 			uint32(nodeCount),
 		)
-		return failures, outputLinks, nil
+		return outputLinks, nil
 	}
 	type linkRange struct {
 		start uint32
@@ -265,12 +359,12 @@ func BuildFailureLinks(
 	}
 
 	levelStart := uint32(1)
-	levelEnd := edgeStarts[1] + 1
+	levelEnd := edgeStarts.Get(1) + 1
 	for levelStart < levelEnd {
 		// Failure targets are complete because nodes are numbered breadth-first.
 		parentCount := int(levelEnd - levelStart)
 		levelWorkers := min(workerCount, parentCount)
-		edgeCount := edgeStarts[levelEnd] - edgeStarts[levelStart]
+		edgeCount := edgeStarts.Get(levelEnd) - edgeStarts.Get(levelStart)
 		if levelWorkers == 1 || edgeCount < minimumParallelEdges {
 			buildFailureLinkRange(
 				edgeStarts,
@@ -294,39 +388,44 @@ func BuildFailureLinks(
 				<-done
 			}
 		}
-		levelStart, levelEnd = edgeStarts[levelStart]+1, edgeStarts[levelEnd]+1
+		levelStart, levelEnd = edgeStarts.Get(levelStart)+1, edgeStarts.Get(levelEnd)+1
 	}
 	close(work)
 	workers.Wait()
-	return failures, outputLinks, nil
+	return outputLinks, nil
 }
 
-func buildFailureLinkRange(
-	edgeStarts []uint32,
-	edgeTokens []uint32,
+func buildFailureLinkRange[
+	S edgeStartLookup,
+	E edgeToken,
+	T terminalLookup,
+	F failureStore,
+](
+	edgeStarts S,
+	edgeTokens []E,
 	rootNext []uint32,
-	terminalHeads []uint32,
-	failures []uint32,
+	terminalHeads T,
+	failures F,
 	outputLinks []uint32,
 	start uint32,
 	end uint32,
 ) {
 	for parent := start; parent < end; parent++ {
-		first, last := edgeStarts[parent], edgeStarts[parent+1]
+		first, last := edgeStarts.Get(parent), edgeStarts.Get(parent+1)
 		for edge := first; edge < last; edge++ {
 			child := edge + 1
-			token := edgeTokens[edge]
-			failure := failures[parent]
+			token := uint32(edgeTokens[edge])
+			failure := failures.get(parent)
 			target, found := directFailure(edgeStarts, edgeTokens, rootNext, failure, token)
 			for !found && failure != 0 {
-				failure = failures[failure]
+				failure = failures.get(failure)
 				target, found = directFailure(edgeStarts, edgeTokens, rootNext, failure, token)
 			}
 			if found {
-				failures[child] = target
+				failures.set(child, target)
 			}
-			failure = failures[child]
-			if terminalHeads[failure] != None {
+			failure = failures.get(child)
+			if terminalHeads.TerminalHead(failure) != None {
 				outputLinks[child] = failure
 			} else {
 				outputLinks[child] = outputLinks[failure]
@@ -335,15 +434,15 @@ func buildFailureLinkRange(
 	}
 }
 
-func directFailure(
-	edgeStarts []uint32,
-	edgeTokens []uint32,
+func directFailure[S edgeStartLookup, E edgeToken](
+	edgeStarts S,
+	edgeTokens []E,
 	rootNext []uint32,
 	state uint32,
 	token uint32,
 ) (uint32, bool) {
 	if state != 0 {
-		return directImplicit(edgeStarts, edgeTokens, state, token)
+		return directImplicitLookup(edgeStarts, edgeTokens, state, token)
 	}
 	if uint64(token) >= uint64(len(rootNext)) {
 		return 0, false
@@ -393,12 +492,11 @@ func reorderBreadthFirst(
 	}
 	newEdgeStarts[nodeCount] = uint32(len(newEdgeTokens))
 	return Automaton{
-		EdgeStarts:    newEdgeStarts,
-		EdgeTokens:    newEdgeTokens,
-		Failures:      newFailures,
-		OutputLinks:   newOutputLinks,
-		TerminalHeads: newTerminalHeads,
-		OutputNext:    outputNext,
+		EdgeStarts: newEdgeStarts,
+		EdgeTokens: newEdgeTokens,
+		Failures:   newFailures,
+		Outputs:    NewSparseOutputs(newOutputLinks, newTerminalHeads),
+		OutputNext: outputNext,
 	}
 }
 
@@ -407,17 +505,21 @@ func reorderBreadthFirst(
 // widest fanout, so a direct token-indexed lookup replaces its binary
 // search. Call after EdgeStarts and EdgeTokens are populated.
 func (a *Automaton) BuildRootTable() {
-	a.rootNext = buildRootTable(a.EdgeStarts, a.EdgeTokens)
+	rootEnd := a.edgeStart(1)
+	if len(a.edgeTokens16) == 0 {
+		a.rootNext = buildRootTable(rootEnd, a.EdgeTokens)
+		return
+	}
+	a.rootNext = buildRootTable(rootEnd, a.edgeTokens16)
 }
 
-func buildRootTable(edgeStarts []uint32, edgeTokens []uint32) []uint32 {
-	if len(edgeStarts) < 2 || edgeStarts[1] == 0 {
+func buildRootTable[T edgeToken](rootEnd uint32, edgeTokens []T) []uint32 {
+	if rootEnd == 0 {
 		return nil
 	}
-	end := edgeStarts[1]
-	table := make([]uint32, edgeTokens[end-1]+1)
-	for edge := edgeStarts[0]; edge < end; edge++ {
-		table[edgeTokens[edge]] = edge + 1
+	table := make([]uint32, uint32(edgeTokens[rootEnd-1])+1)
+	for edge := uint32(0); edge < rootEnd; edge++ {
+		table[uint32(edgeTokens[edge])] = edge + 1
 	}
 	return table
 }
@@ -425,10 +527,10 @@ func buildRootTable(edgeStarts []uint32, edgeTokens []uint32) []uint32 {
 // Next advances state with token, following failure links as needed.
 func (a *Automaton) Next(state, token uint32) uint32 {
 	for state != 0 {
-		if target, found := directImplicit(a.EdgeStarts, a.EdgeTokens, state, token); found {
+		if target, found := a.directImplicit(state, token); found {
 			return target
 		}
-		state = a.Failures[state]
+		state = a.failure(state)
 	}
 	if a.rootNext != nil {
 		if uint64(token) < uint64(len(a.rootNext)) {
@@ -436,28 +538,100 @@ func (a *Automaton) Next(state, token uint32) uint32 {
 		}
 		return 0
 	}
-	target, _ := directImplicit(a.EdgeStarts, a.EdgeTokens, 0, token)
+	target, _ := a.directImplicit(0, token)
 	return target
+}
+
+func (a *Automaton) directImplicit(state, token uint32) (uint32, bool) {
+	start, end := a.edgeStart(state), a.edgeStart(state+1)
+	if len(a.edgeTokens16) == 0 {
+		return directImplicitRange(a.EdgeTokens, start, end, token)
+	}
+	return directImplicitRange(a.edgeTokens16, start, end, token)
+}
+
+// CompactNodeIndexes stores node indexes in 24 bits when the automaton fits.
+func (a *Automaton) CompactNodeIndexes() {
+	const limit = 1 << 24
+	if a.NodeCount() >= limit || len(a.EdgeStarts) == 0 || len(a.Failures) == 0 {
+		return
+	}
+	a.edgeStarts = NewCompactEdgeStarts(a.EdgeStarts)
+	a.failures24 = packUint24(a.Failures)
+	a.EdgeStarts = nil
+	a.Failures = nil
+}
+
+// DenseEdgeStarts returns edge offsets as uint32 values.
+func (a *Automaton) DenseEdgeStarts() []uint32 {
+	if a.edgeStarts.Len() == 0 {
+		return a.EdgeStarts
+	}
+	return a.edgeStarts.dense()
+}
+
+func (a *Automaton) edgeStart(index uint32) uint32 {
+	if a.edgeStarts.Len() != 0 {
+		return a.edgeStarts.Get(index)
+	}
+	return a.EdgeStarts[index]
+}
+
+func (a *Automaton) failure(index uint32) uint32 {
+	if len(a.failures24) != 0 {
+		return a.failures24.get(index)
+	}
+	return a.Failures[index]
+}
+
+// DenseEdgeTokens returns edge tokens as uint32 values.
+func (a *Automaton) DenseEdgeTokens() []uint32 {
+	if len(a.edgeTokens16) == 0 {
+		return a.EdgeTokens
+	}
+	tokens := make([]uint32, len(a.edgeTokens16))
+	for index, token := range a.edgeTokens16 {
+		tokens[index] = uint32(token)
+	}
+	return tokens
+}
+
+func (a *Automaton) edgeTokenCount() int {
+	if len(a.edgeTokens16) != 0 {
+		return len(a.edgeTokens16)
+	}
+	return len(a.EdgeTokens)
+}
+
+func (a *Automaton) edgeToken(index uint32) uint32 {
+	if len(a.edgeTokens16) != 0 {
+		return uint32(a.edgeTokens16[index])
+	}
+	return a.EdgeTokens[index]
 }
 
 // AppendOutputs appends all pattern values ending at state to values.
 func (a *Automaton) AppendOutputs(values []uint32, state uint32) []uint32 {
-	for node := state; node != None; node = a.OutputLinks[node] {
-		for value := a.TerminalHeads[node]; value != None; value = a.OutputNext[value] {
+	for node := state; node != None; {
+		link, head := a.Outputs.Get(node)
+		for value := head; value != None; value = a.OutputNext[value] {
 			values = append(values, value)
 		}
+		node = link
 	}
 	return values
 }
 
 // HasOutput reports whether value is among the patterns ending at state.
 func (a *Automaton) HasOutput(state, value uint32) bool {
-	for node := state; node != None; node = a.OutputLinks[node] {
-		for output := a.TerminalHeads[node]; output != None; output = a.OutputNext[output] {
+	for node := state; node != None; {
+		link, head := a.Outputs.Get(node)
+		for output := head; output != None; output = a.OutputNext[output] {
 			if output == value {
 				return true
 			}
 		}
+		node = link
 	}
 	return false
 }
@@ -477,65 +651,81 @@ func direct(
 	return edgeTargets[start+uint32(position)], true
 }
 
-func directImplicit(
-	edgeStarts []uint32,
-	edgeTokens []uint32,
+func directImplicitLookup[S edgeStartLookup, T edgeToken](
+	edgeStarts S,
+	edgeTokens []T,
 	state uint32,
 	token uint32,
 ) (uint32, bool) {
-	start, end := edgeStarts[state], edgeStarts[state+1]
+	start, end := edgeStarts.Get(state), edgeStarts.Get(state+1)
+	return directImplicitRange(edgeTokens, start, end, token)
+}
+
+func directImplicitRange[T edgeToken](
+	edgeTokens []T,
+	start uint32,
+	end uint32,
+	token uint32,
+) (uint32, bool) {
 	if start == end {
 		return 0, false
 	}
 	if end-start == 1 {
-		if edgeTokens[start] == token {
+		if uint32(edgeTokens[start]) == token {
 			return start + 1, true
 		}
 		return 0, false
 	}
-	position, found := slices.BinarySearch(edgeTokens[start:end], token)
-	if !found {
+	low, high := start, end
+	for low < high {
+		middle := low + (high-low)/binarySearchDivisor
+		if uint32(edgeTokens[middle]) < token {
+			low = middle + 1
+		} else {
+			high = middle
+		}
+	}
+	if low == end || uint32(edgeTokens[low]) != token {
 		return 0, false
 	}
-	return start + uint32(position) + 1, true
+	return low + 1, true
 }
 
 // Validate checks array lengths, references, and edge ordering.
 func (a *Automaton) Validate(valueCount int) error {
-	nodeCount := len(a.Failures)
+	nodeCount := a.NodeCount()
 	if nodeCount == 0 {
 		return errors.New("aho: automaton has no root")
 	}
-	if len(a.EdgeStarts) != nodeCount+1 ||
-		len(a.OutputLinks) != nodeCount ||
-		len(a.TerminalHeads) != nodeCount {
+	if a.edgeStartCount() != nodeCount+1 ||
+		a.Outputs.Len() != nodeCount {
 		return errors.New("aho: inconsistent node array lengths")
 	}
-	if len(a.EdgeTokens) != nodeCount-1 ||
-		a.EdgeStarts[nodeCount] != uint32(len(a.EdgeTokens)) {
+	edgeTokenCount := a.edgeTokenCount()
+	if edgeTokenCount != nodeCount-1 ||
+		a.edgeStart(uint32(nodeCount)) != uint32(edgeTokenCount) {
 		return errors.New("aho: inconsistent edge array lengths")
 	}
 	if len(a.OutputNext) != valueCount {
 		return fmt.Errorf("aho: %d output links for %d values", len(a.OutputNext), valueCount)
 	}
 	for node := range nodeCount {
-		if a.Failures[node] >= uint32(nodeCount) {
+		if a.failure(uint32(node)) >= uint32(nodeCount) {
 			return fmt.Errorf("aho: invalid failure from node %d", node)
 		}
-		link := a.OutputLinks[node]
+		link, head := a.Outputs.Get(uint32(node))
 		if link != None && link >= uint32(nodeCount) {
 			return fmt.Errorf("aho: invalid output link from node %d", node)
 		}
-		head := a.TerminalHeads[node]
 		if head != None && head >= uint32(valueCount) {
 			return fmt.Errorf("aho: invalid terminal output at node %d", node)
 		}
-		start, end := a.EdgeStarts[node], a.EdgeStarts[node+1]
-		if start > end || end > uint32(len(a.EdgeTokens)) {
+		start, end := a.edgeStart(uint32(node)), a.edgeStart(uint32(node+1))
+		if start > end || end > uint32(edgeTokenCount) {
 			return fmt.Errorf("aho: invalid edge range for node %d", node)
 		}
 		for edge := start; edge < end; edge++ {
-			if edge > start && a.EdgeTokens[edge-1] >= a.EdgeTokens[edge] {
+			if edge > start && a.edgeToken(edge-1) >= a.edgeToken(edge) {
 				return fmt.Errorf("aho: unsorted edges for node %d", node)
 			}
 		}
@@ -577,10 +767,20 @@ func validateOutputChains(nextValues []uint32) error {
 
 // NodeCount returns the number of trie nodes, including the root.
 func (a *Automaton) NodeCount() int {
+	if len(a.failures24) != 0 {
+		return a.failures24.len()
+	}
 	return len(a.Failures)
+}
+
+func (a *Automaton) edgeStartCount() int {
+	if a.edgeStarts.Len() != 0 {
+		return a.edgeStarts.Len()
+	}
+	return len(a.EdgeStarts)
 }
 
 // EdgeCount returns the number of trie edges.
 func (a *Automaton) EdgeCount() int {
-	return len(a.EdgeTokens)
+	return a.edgeTokenCount()
 }
