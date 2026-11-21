@@ -179,6 +179,11 @@ type ScanSummary struct {
 	FilesSkippedOther              int   `json:"files_skipped_other"`
 	ErrorCount                     int   `json:"error_count"`
 	Truncated                      bool  `json:"truncated"`
+	// FilesWithDeclarations counts manifests with a declared record.
+	FilesWithDeclarations int `json:"files_with_declarations"`
+	// FilesWithConflictingDeclarations counts declarations whose agreement
+	// is conflicts.
+	FilesWithConflictingDeclarations int `json:"files_with_conflicting_declarations"`
 }
 
 // ExpressionRecord summarizes a detected license expression across files.
@@ -190,12 +195,23 @@ type ExpressionRecord struct {
 	Matches        int            `json:"matches"`
 }
 
-// DeclaredRecord contains license metadata read from a package manifest.
+// DeclaredRecord contains license metadata read from a package manifest and
+// how it compares with the license text detected for the same package.
 type DeclaredRecord struct {
 	Path                 string   `json:"path"`
 	Raw                  []string `json:"raw"`
 	LicenseFile          string   `json:"license_file"`
 	NormalizedExpression string   `json:"normalized_expression"`
+	// Root reports whether the manifest is at the top of the scanned tree.
+	Root bool `json:"root"`
+	// LicenseFilePath is the scan-relative path of LicenseFile when that file
+	// was found within the scan.
+	LicenseFilePath string `json:"license_file_path"`
+	// Detected lists the expressions detected in the manifest, in the license
+	// file it names and in legal files or READMEs beside it.
+	Detected []string `json:"detected"`
+	// Agreement compares NormalizedExpression with Detected.
+	Agreement Agreement `json:"agreement"`
 }
 
 // FileRecord contains the license detections and clues reported for one file.
@@ -342,6 +358,10 @@ func scanRepository(
 		return scanReport{}, err
 	}
 	report.Declared = append(report.Declared, discovery.declared...)
+	discovered := make(map[string]bool, len(discovery.tasks))
+	for _, task := range discovery.tasks {
+		discovered[task.display] = true
+	}
 	report.Errors = append(report.Errors, discovery.scanErrors...)
 	report.Skipped = append(report.Skipped, discovery.skipped...)
 
@@ -408,6 +428,7 @@ func scanRepository(
 	slices.SortFunc(report.Declared, func(first, second declaredRecord) int {
 		return strings.Compare(first.Path, second.Path)
 	})
+	resolveDeclarations(&report, discovered)
 	slices.SortFunc(report.Errors, func(first, second scanErrorRecord) int {
 		if compared := strings.Compare(first.Path, second.Path); compared != 0 {
 			return compared

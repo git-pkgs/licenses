@@ -22,6 +22,7 @@ type scanReport = licenses.ScanReport
 type scannerRecord = licenses.ScannerRecord
 type scanSummary = licenses.ScanSummary
 type expressionRecord = licenses.ExpressionRecord
+type declaredRecord = licenses.DeclaredRecord
 type fileRecord = licenses.FileRecord
 type detectionRecord = licenses.DetectionRecord
 type matchRecord = licenses.MatchRecord

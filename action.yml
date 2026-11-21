@@ -35,7 +35,7 @@ inputs:
     required: false
     default: ""
   fail-on-no-detections:
-    description: Fail the job when the scan finds no conclusive detections
+    description: Fail the job when the scan finds neither conclusive detections nor a normalized manifest declaration
     required: false
     default: "false"
 
