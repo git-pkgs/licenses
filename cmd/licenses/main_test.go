@@ -495,6 +495,8 @@ func TestRunHumanDeclarations(t *testing.T) {
   s.license = "BSD"
 end
 `))
+	writeTestFile(t, filepath.Join(root, "app", "package.json"), []byte(`{"name":"app","license":"MIT"}`))
+	writeTestFile(t, filepath.Join(root, "app", "LICENSE"), []byte("SPDX-License-Identifier: Apache-2.0\n"))
 	writeTestFile(t, filepath.Join(root, "cargo", "Cargo.toml"), []byte(`[package]
 name = "license-file"
 version = "0.1.0"
@@ -515,9 +517,9 @@ license-file = "LICENSE.custom"
 		t.Errorf("exit code = %d, want %d", exitCode, exitSuccess)
 	}
 	for _, want := range []string{
-		"Declared licenses:\n  Example.podspec: BSD-2-Clause [conflicts]\n    raw: BSD\n    detected: BSD-3-Clause\n",
-		"  cargo/Cargo.toml: no SPDX expression [unnormalized]\n    license file: LICENSE.custom (not found)\n",
-		"; 2 manifests declared, 1 conflicting",
+		"Declared licenses:\n  Example.podspec: BSD-2-Clause [undetected]\n    raw: BSD\n  app/package.json: MIT [conflicts]\n    raw: MIT\n    detected: Apache-2.0\n",
+		"  cargo/Cargo.toml: no SPDX expression [unnormalized]\n    license file: LICENSE.custom (not scanned)\n",
+		"; 3 manifests declared, 1 conflicting",
 	} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Errorf("output does not contain %q:\n%s", want, stdout.String())

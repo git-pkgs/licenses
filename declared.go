@@ -12,7 +12,8 @@ type Agreement string
 
 const (
 	// AgreementAgrees means the declaration and the package detections name
-	// the same license and exception identifiers.
+	// the same license and exception identifiers, treating -only and
+	// -or-later variants of a license as the same license.
 	AgreementAgrees Agreement = "agrees"
 	// AgreementConflicts means the package detections name identifiers the
 	// declaration does not, or the declaration names identifiers the
@@ -27,9 +28,10 @@ const (
 )
 
 // resolveDeclarations compares each manifest declaration with the license
-// text detected for its package. Package evidence is the manifest itself, the
-// license file it names plus legal files and READMEs in its directory.
-func resolveDeclarations(report *scanReport, discovered map[string]bool) {
+// text detected for its package. Package evidence is the license file the
+// manifest names plus files with the license role in its directory. The
+// manifest's own detections are excluded because they reread the declaration.
+func resolveDeclarations(report *scanReport, scanned map[string]bool) {
 	filesByDirectory := make(map[string][]fileRecord)
 	filesByPath := make(map[string]fileRecord, len(report.Files))
 	for _, file := range report.Files {
@@ -40,8 +42,7 @@ func resolveDeclarations(report *scanReport, discovered map[string]bool) {
 	for index := range report.Declared {
 		declared := &report.Declared[index]
 		directory := pathpkg.Dir(declared.Path)
-		declared.Root = pathDepth(declared.Path) == 1
-		declared.LicenseFilePath = resolveLicenseFile(directory, declared.LicenseFile, discovered)
+		declared.LicenseFilePath = resolveLicenseFile(directory, declared.LicenseFile, scanned)
 
 		evidence := make(map[string]bool)
 		addEvidence := func(file fileRecord) {
@@ -52,12 +53,12 @@ func resolveDeclarations(report *scanReport, discovered map[string]bool) {
 			}
 		}
 		for _, file := range filesByDirectory[directory] {
-			if file.Path == declared.Path || file.Path == declared.LicenseFilePath ||
-				len(file.Roles) != 0 || isReadmeFile(file.Path) {
+			if file.Path != declared.Path && file.Path != declared.LicenseFilePath &&
+				slices.Contains(file.Roles, "license") {
 				addEvidence(file)
 			}
 		}
-		if file, ok := filesByPath[declared.LicenseFilePath]; ok && pathpkg.Dir(file.Path) != directory {
+		if file, ok := filesByPath[declared.LicenseFilePath]; ok && file.Path != declared.Path {
 			addEvidence(file)
 		}
 		declared.Detected = make([]string, 0, len(evidence))
@@ -75,14 +76,14 @@ func resolveDeclarations(report *scanReport, discovered map[string]bool) {
 }
 
 // resolveLicenseFile returns the scan-relative path of a license file named
-// by a manifest in directory, or "" when it was not found within the scan.
-func resolveLicenseFile(directory, name string, discovered map[string]bool) string {
+// by a manifest in directory, or "" when that file was not scanned.
+func resolveLicenseFile(directory, name string, scanned map[string]bool) string {
 	name = strings.TrimSpace(strings.ReplaceAll(name, "\\", "/"))
 	if name == "" || pathpkg.IsAbs(name) {
 		return ""
 	}
 	resolved := pathpkg.Join(directory, name)
-	if resolved == ".." || strings.HasPrefix(resolved, "../") || !discovered[resolved] {
+	if resolved == ".." || strings.HasPrefix(resolved, "../") || !scanned[resolved] {
 		return ""
 	}
 	return resolved
@@ -105,8 +106,8 @@ func compareDeclaration(expression string, detected []string) Agreement {
 	return AgreementConflicts
 }
 
-// expressionIdentifiers returns the sorted, case-folded license and exception
-// identifiers in an SPDX expression, ignoring its operators.
+// expressionIdentifiers returns the sorted license and exception identifiers
+// in an SPDX expression in comparable form, ignoring its operators.
 func expressionIdentifiers(expression string) []string {
 	fields := strings.Fields(strings.NewReplacer("(", " ", ")", " ").Replace(expression))
 	identifiers := make([]string, 0, len(fields))
@@ -120,9 +121,16 @@ func expressionIdentifiers(expression string) []string {
 	return slices.Compact(sortedFolded(identifiers))
 }
 
+// sortedFolded case-folds and sorts identifiers. It also drops -only,
+// -or-later and + suffixes, since license text cannot say whether later
+// versions apply and is detected as the -only variant.
 func sortedFolded(values []string) []string {
 	for index, value := range values {
-		values[index] = strings.ToLower(value)
+		value = strings.ToLower(value)
+		value = strings.TrimSuffix(value, "+")
+		value = strings.TrimSuffix(value, "-or-later")
+		value = strings.TrimSuffix(value, "-only")
+		values[index] = value
 	}
 	slices.Sort(values)
 	return values

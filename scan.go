@@ -202,13 +202,11 @@ type DeclaredRecord struct {
 	Raw                  []string `json:"raw"`
 	LicenseFile          string   `json:"license_file"`
 	NormalizedExpression string   `json:"normalized_expression"`
-	// Root reports whether the manifest is at the top of the scanned tree.
-	Root bool `json:"root"`
 	// LicenseFilePath is the scan-relative path of LicenseFile when that file
-	// was found within the scan.
+	// was scanned.
 	LicenseFilePath string `json:"license_file_path"`
-	// Detected lists the expressions detected in the manifest, in the license
-	// file it names and in legal files or READMEs beside it.
+	// Detected lists the expressions detected in the license file the
+	// manifest names and in files with the license role beside it.
 	Detected []string `json:"detected"`
 	// Agreement compares NormalizedExpression with Detected.
 	Agreement Agreement `json:"agreement"`
@@ -358,10 +356,7 @@ func scanRepository(
 		return scanReport{}, err
 	}
 	report.Declared = append(report.Declared, discovery.declared...)
-	discovered := make(map[string]bool, len(discovery.tasks))
-	for _, task := range discovery.tasks {
-		discovered[task.display] = true
-	}
+	scanned := make(map[string]bool, len(discovery.tasks))
 	report.Errors = append(report.Errors, discovery.scanErrors...)
 	report.Skipped = append(report.Skipped, discovery.skipped...)
 
@@ -391,6 +386,7 @@ func scanRepository(
 				Reason: skipReasonSize,
 			})
 		case outcome.scanned:
+			scanned[outcome.task.display] = true
 			if len(outcome.result.Detections) == 0 &&
 				len(outcome.result.Clues) == 0 &&
 				(!options.IncludeLegalFiles || len(outcome.roles) == 0) {
@@ -428,7 +424,7 @@ func scanRepository(
 	slices.SortFunc(report.Declared, func(first, second declaredRecord) int {
 		return strings.Compare(first.Path, second.Path)
 	})
-	resolveDeclarations(&report, discovered)
+	resolveDeclarations(&report, scanned)
 	slices.SortFunc(report.Errors, func(first, second scanErrorRecord) int {
 		if compared := strings.Compare(first.Path, second.Path); compared != 0 {
 			return compared

@@ -274,7 +274,7 @@ func writeHumanDeclared(writer io.Writer, declared []declaredRecord) error {
 		if record.LicenseFile != "" {
 			licenseFile := record.LicenseFile
 			if record.LicenseFilePath == "" {
-				licenseFile += " (not found)"
+				licenseFile += " (not scanned)"
 			}
 			if _, err := fmt.Fprintf(writer, "    license file: %s\n", licenseFile); err != nil {
 				return err

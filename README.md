@@ -102,18 +102,20 @@ can be normalized. Multiple values are joined with `OR`; values that cannot be
 normalized remain available in `raw` with an empty `normalized_expression`.
 
 Declarations are package-scoped evidence kept separate from license-text
-detections. Each record compares its declaration with the expressions
-detected for the same package: the manifest itself, the license file it names
-and legal files or READMEs in the manifest's directory. Those expressions are
-listed in `detected`, excluding `NOASSERTION` detections. `agreement` is
-`agrees` when both name the same license and exception identifiers regardless
-of operators, `conflicts` when they differ, `undetected` when no license text
-was found for the package, or `unnormalized` when the declaration has no SPDX
-expression. `root` marks a manifest at the top of the scanned tree.
-`license_file_path` gives the scan-relative path of `license_file` when that
-file was found within the scan, otherwise it is empty. The summary counts
-manifests with declarations and those that conflict. Human output lists each
-declaration with its agreement before the detected expressions.
+detections. Each record compares its declaration with the license text
+detected for the same package: the license file the manifest names plus files
+with the license role in the manifest's directory. Notice-only files, READMEs
+and the manifest's own text are not evidence. Those expressions are listed in
+`detected`, excluding `NOASSERTION` detections. `agreement` is `agrees` when
+both name the same license and exception identifiers regardless of operators,
+`conflicts` when they differ, `undetected` when no license text was found for
+the package, or `unnormalized` when the declaration has no SPDX expression.
+The `-only` and `-or-later` variants of a license compare as the same license,
+since license text is detected as `-only`. `license_file_path` gives the
+scan-relative path of `license_file` when that file was scanned, otherwise it
+is empty. The summary counts manifests with declarations and those that
+conflict. Human output lists each declaration with its agreement before the
+detected expressions.
 
 Reported expressions use canonical SPDX identifiers when ScanCode supplies
 one. Other ScanCode license keys use `LicenseRef-scancode-<key>`. ScanCode rule
