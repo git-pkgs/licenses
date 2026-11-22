@@ -11,13 +11,12 @@ import (
 type Agreement string
 
 const (
-	// AgreementAgrees means the declaration and the package detections name
-	// the same license and exception identifiers, treating -only and
-	// -or-later variants of a license as the same license.
+	// AgreementAgrees means every declared license has matching detected
+	// text. The -only and -or-later variants of a license count as the same
+	// license, WITH exceptions need no text and extra detections are allowed.
 	AgreementAgrees Agreement = "agrees"
-	// AgreementConflicts means the package detections name identifiers the
-	// declaration does not, or the declaration names identifiers the
-	// detections do not.
+	// AgreementConflicts means a declared license has no matching detected
+	// text.
 	AgreementConflicts Agreement = "conflicts"
 	// AgreementUndetected means the declaration has an SPDX expression but no
 	// license text was detected for the package.
@@ -27,10 +26,7 @@ const (
 	AgreementUnnormalized Agreement = "unnormalized"
 )
 
-// resolveDeclarations compares each manifest declaration with the license
-// text detected for its package. Package evidence is the license file the
-// manifest names plus files with the license role in its directory. The
-// manifest's own detections are excluded because they reread the declaration.
+// resolveDeclarations compares each declaration with its package's license files.
 func resolveDeclarations(report *scanReport, scanned map[string]bool) {
 	filesByDirectory := make(map[string][]fileRecord)
 	filesByPath := make(map[string]fileRecord, len(report.Files))
@@ -96,42 +92,43 @@ func compareDeclaration(expression string, detected []string) Agreement {
 	if len(detected) == 0 {
 		return AgreementUndetected
 	}
-	detectedIDs := make([]string, 0)
+	found := make(map[string]bool)
 	for _, value := range detected {
-		detectedIDs = append(detectedIDs, expressionIdentifiers(value)...)
+		for _, identifier := range licenseIdentifiers(value) {
+			found[identifier] = true
+		}
 	}
-	if slices.Equal(expressionIdentifiers(expression), slices.Compact(sortedFolded(detectedIDs))) {
-		return AgreementAgrees
+	for _, identifier := range licenseIdentifiers(expression) {
+		if !found[identifier] {
+			return AgreementConflicts
+		}
 	}
-	return AgreementConflicts
+	return AgreementAgrees
 }
 
-// expressionIdentifiers returns the sorted license and exception identifiers
-// in an SPDX expression in comparable form, ignoring its operators.
-func expressionIdentifiers(expression string) []string {
+// licenseIdentifiers returns the comparable license identifiers in an SPDX
+// expression, without operators or WITH exceptions.
+func licenseIdentifiers(expression string) []string {
 	fields := strings.Fields(strings.NewReplacer("(", " ", ")", " ").Replace(expression))
 	identifiers := make([]string, 0, len(fields))
-	for _, field := range fields {
-		switch strings.ToUpper(field) {
-		case "AND", "OR", "WITH":
+	for index := 0; index < len(fields); index++ {
+		switch strings.ToUpper(fields[index]) {
+		case "AND", "OR":
+			continue
+		case "WITH":
+			index++
 			continue
 		}
-		identifiers = append(identifiers, field)
+		identifiers = append(identifiers, comparableIdentifier(fields[index]))
 	}
-	return slices.Compact(sortedFolded(identifiers))
+	return identifiers
 }
 
-// sortedFolded case-folds and sorts identifiers. It also drops -only,
-// -or-later and + suffixes, since license text cannot say whether later
-// versions apply and is detected as the -only variant.
-func sortedFolded(values []string) []string {
-	for index, value := range values {
-		value = strings.ToLower(value)
-		value = strings.TrimSuffix(value, "+")
-		value = strings.TrimSuffix(value, "-or-later")
-		value = strings.TrimSuffix(value, "-only")
-		values[index] = value
-	}
-	slices.Sort(values)
-	return values
+// comparableIdentifier folds case and the -only, -or-later and + variants,
+// since license text is detected as the -only variant.
+func comparableIdentifier(identifier string) string {
+	identifier = strings.ToLower(identifier)
+	identifier = strings.TrimSuffix(identifier, "+")
+	identifier = strings.TrimSuffix(identifier, "-or-later")
+	return strings.TrimSuffix(identifier, "-only")
 }

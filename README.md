@@ -107,14 +107,16 @@ detected for the same package: the license file the manifest names plus files
 with the license role in the manifest's directory. Notice-only files, READMEs
 and the manifest's own text are not evidence. Those expressions are listed in
 `detected`, excluding `NOASSERTION` detections. `agreement` is `agrees` when
-both name the same license and exception identifiers regardless of operators,
-`conflicts` when they differ, `undetected` when no license text was found for
-the package, or `unnormalized` when the declaration has no SPDX expression.
-The `-only` and `-or-later` variants of a license compare as the same license,
-since license text is detected as `-only`. `license_file_path` gives the
-scan-relative path of `license_file` when that file was scanned, otherwise it
-is empty. The summary counts manifests with declarations and those that
-conflict. Human output lists each declaration with its agreement before the
+every license in the declaration appears in `detected`, `conflicts` when a
+declared license has no matching text, `undetected` when no license text was
+found for the package, or `unnormalized` when the declaration has no SPDX
+expression. Extra detected licenses, such as GPL text beside an LGPL license or
+a third-party license file, do not cause a conflict. `WITH` exceptions need no
+detected text. The `-only` and `-or-later` variants of a license compare as the
+same license, since license text is detected as `-only`. `license_file_path`
+gives the scan-relative path of `license_file` when that file was scanned,
+otherwise it is empty. The summary counts manifests with declarations and those
+that conflict. Human output lists each declaration with its agreement before the
 detected expressions.
 
 Reported expressions use canonical SPDX identifiers when ScanCode supplies

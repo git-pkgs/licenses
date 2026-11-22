@@ -179,10 +179,8 @@ type ScanSummary struct {
 	FilesSkippedOther              int   `json:"files_skipped_other"`
 	ErrorCount                     int   `json:"error_count"`
 	Truncated                      bool  `json:"truncated"`
-	// FilesWithDeclarations counts manifests with a declared record.
-	FilesWithDeclarations int `json:"files_with_declarations"`
-	// FilesWithConflictingDeclarations counts declarations whose agreement
-	// is conflicts.
+	// Manifest declaration counts.
+	FilesWithDeclarations            int `json:"files_with_declarations"`
 	FilesWithConflictingDeclarations int `json:"files_with_conflicting_declarations"`
 }
 
@@ -202,14 +200,10 @@ type DeclaredRecord struct {
 	Raw                  []string `json:"raw"`
 	LicenseFile          string   `json:"license_file"`
 	NormalizedExpression string   `json:"normalized_expression"`
-	// LicenseFilePath is the scan-relative path of LicenseFile when that file
-	// was scanned.
-	LicenseFilePath string `json:"license_file_path"`
-	// Detected lists the expressions detected in the license file the
-	// manifest names and in files with the license role beside it.
-	Detected []string `json:"detected"`
-	// Agreement compares NormalizedExpression with Detected.
-	Agreement Agreement `json:"agreement"`
+	// LicenseFilePath is empty unless the named license file was scanned.
+	LicenseFilePath string    `json:"license_file_path"`
+	Detected        []string  `json:"detected"`
+	Agreement       Agreement `json:"agreement"`
 }
 
 // FileRecord contains the license detections and clues reported for one file.

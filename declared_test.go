@@ -212,6 +212,73 @@ license-file = "LICENSE"
 	}
 }
 
+func TestScanRepositoryDeclarationLayouts(t *testing.T) {
+	t.Parallel()
+
+	read := func(name string) []byte {
+		t.Helper()
+		data, err := os.ReadFile(filepath.Join("testdata", "declarations", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return data
+	}
+	root := t.TempDir()
+	writeTestFile(t, filepath.Join(root, "lgpl", "package.json"), []byte(`{"name":"lgpl","license":"LGPL-2.1-or-later"}`))
+	writeTestFile(t, filepath.Join(root, "lgpl", "COPYING"), read("gpl-3.0.txt"))
+	writeTestFile(t, filepath.Join(root, "lgpl", "COPYING.LESSER"), read("lgpl-2.1.txt"))
+	writeTestFile(t, filepath.Join(root, "third", "package.json"), []byte(`{"name":"third","license":"Apache-2.0"}`))
+	writeTestFile(t, filepath.Join(root, "third", "LICENSE"), read("apache-2.0.txt"))
+	writeTestFile(t, filepath.Join(root, "third", "LICENSE-THIRD-PARTY"), projectLicense(t))
+	writeTestFile(t, filepath.Join(root, "exception", "Cargo.toml"), []byte(`[package]
+name = "exception"
+version = "0.1.0"
+license = "Apache-2.0 WITH LLVM-exception"
+`))
+	writeTestFile(t, filepath.Join(root, "exception", "LICENSE"), read("apache-2.0.txt"))
+	writeTestFile(t, filepath.Join(root, "dual", "package.json"), []byte(`{"name":"dual","license":"MIT OR Apache-2.0"}`))
+	writeTestFile(t, filepath.Join(root, "dual", "LICENSE"), projectLicense(t))
+
+	report, err := scanRepository(
+		context.Background(),
+		newTestMatcher(t),
+		root,
+		defaultTestScanOptions(),
+		testScannerVersion,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]struct {
+		detected  []string
+		agreement Agreement
+	}{
+		"dual/package.json":    {detected: []string{"MIT"}, agreement: AgreementConflicts},
+		"exception/Cargo.toml": {detected: []string{"Apache-2.0"}, agreement: AgreementAgrees},
+		"lgpl/package.json": {
+			detected: []string{
+				"GPL-1.0-or-later", "GPL-2.0-only", "GPL-3.0-only",
+				"LGPL-2.0-or-later", "LGPL-2.1-only", "LGPL-2.1-or-later",
+			},
+			agreement: AgreementAgrees,
+		},
+		"third/package.json": {detected: []string{"Apache-2.0", "MIT"}, agreement: AgreementAgrees},
+	}
+	if len(report.Declared) != len(want) {
+		t.Fatalf("declared = %+v, want %d records", report.Declared, len(want))
+	}
+	for _, record := range report.Declared {
+		expected, ok := want[record.Path]
+		if !ok || !slices.Equal(record.Detected, expected.detected) || record.Agreement != expected.agreement {
+			t.Errorf("%s: detected %q, agreement %q; want %q, %q",
+				record.Path, record.Detected, record.Agreement, expected.detected, expected.agreement)
+		}
+	}
+	if report.Summary.FilesWithConflictingDeclarations != 1 {
+		t.Errorf("conflicting declarations = %d, want 1", report.Summary.FilesWithConflictingDeclarations)
+	}
+}
+
 func TestResolveLicenseFile(t *testing.T) {
 	t.Parallel()
 
@@ -263,9 +330,15 @@ func TestCompareDeclaration(t *testing.T) {
 		{expression: "GPL-2.0-or-later OR MIT", detected: []string{"GPL-2.0-only", "MIT"}, want: AgreementAgrees},
 		{expression: "GPL-2.0-or-later", detected: []string{"GPL-3.0-only"}, want: AgreementConflicts},
 		{expression: "LGPL-2.1-or-later", detected: []string{"GPL-2.0-only"}, want: AgreementConflicts},
-		{expression: "GPL-3.0-or-later", detected: []string{"GPL-3.0-only", "LicenseRef-scancode-unknown-license-reference"}, want: AgreementConflicts},
+		{expression: "GPL-3.0-or-later", detected: []string{"GPL-3.0-only", "LicenseRef-scancode-unknown-license-reference"}, want: AgreementAgrees},
+		{expression: "LGPL-2.1-or-later", detected: []string{"GPL-1.0-or-later", "GPL-2.0-only", "GPL-3.0-only", "LGPL-2.0-or-later", "LGPL-2.1-only", "LGPL-2.1-or-later"}, want: AgreementAgrees},
+		{expression: "Apache-2.0", detected: []string{"Apache-2.0", "MIT"}, want: AgreementAgrees},
+		{expression: "Apache-2.0 WITH LLVM-exception", detected: []string{"Apache-2.0"}, want: AgreementAgrees},
+		{expression: "(Apache-2.0 WITH LLVM-exception) OR MIT", detected: []string{"Apache-2.0", "MIT"}, want: AgreementAgrees},
+		{expression: "Apache-2.0 WITH LLVM-exception", detected: []string{"MIT", "LLVM-exception"}, want: AgreementConflicts},
+		{expression: "MIT AND Apache-2.0", detected: []string{"MIT"}, want: AgreementConflicts},
 		{expression: "MIT OR Apache-2.0", detected: []string{"MIT"}, want: AgreementConflicts},
-		{expression: "MIT", detected: []string{"MIT", "Apache-2.0"}, want: AgreementConflicts},
+		{expression: "MIT", detected: []string{"MIT", "Apache-2.0"}, want: AgreementAgrees},
 		{expression: "PSF-2.0", detected: []string{}, want: AgreementUndetected},
 		{expression: "", detected: []string{"MIT"}, want: AgreementUnnormalized},
 	} {
