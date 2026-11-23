@@ -180,10 +180,19 @@ func reportExitCode(report scanReport) int {
 	if len(report.Errors) != 0 || report.Summary.Truncated {
 		return exitScanErrors
 	}
-	if len(report.Expressions) == 0 {
+	if len(report.Expressions) == 0 && !hasNormalizedDeclaration(report.Declared) {
 		return exitNoDetections
 	}
 	return exitSuccess
+}
+
+func hasNormalizedDeclaration(declared []declaredRecord) bool {
+	for _, record := range declared {
+		if record.NormalizedExpression != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func parseSkippedDirectories(value string) map[string]bool {
@@ -207,6 +216,9 @@ func writeHuman(writer io.Writer, report scanReport) error {
 		report.Corpus.RuleCount,
 		report.Corpus.SourceCommit,
 	); err != nil {
+		return err
+	}
+	if err := writeHumanDeclared(writer, report.Declared); err != nil {
 		return err
 	}
 	if err := writeHumanExpressions(writer, report.Expressions); err != nil {
@@ -234,6 +246,44 @@ func writeHumanSkipped(writer io.Writer, skipped []skipRecord) error {
 	for _, record := range skipped {
 		if _, err := fmt.Fprintf(writer, "  %s: %s\n", record.Path, record.Reason); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+func writeHumanDeclared(writer io.Writer, declared []declaredRecord) error {
+	if len(declared) == 0 {
+		return nil
+	}
+	if _, err := fmt.Fprintln(writer, "\nDeclared licenses:"); err != nil {
+		return err
+	}
+	for _, record := range declared {
+		expression := record.NormalizedExpression
+		if expression == "" {
+			expression = "no SPDX expression"
+		}
+		if _, err := fmt.Fprintf(writer, "  %s: %s [%s]\n", record.Path, expression, record.Agreement); err != nil {
+			return err
+		}
+		if len(record.Raw) != 0 {
+			if _, err := fmt.Fprintf(writer, "    raw: %s\n", strings.Join(record.Raw, "; ")); err != nil {
+				return err
+			}
+		}
+		if record.LicenseFile != "" {
+			licenseFile := record.LicenseFile
+			if record.LicenseFilePath == "" {
+				licenseFile += " (not scanned)"
+			}
+			if _, err := fmt.Fprintf(writer, "    license file: %s\n", licenseFile); err != nil {
+				return err
+			}
+		}
+		if len(record.Detected) != 0 {
+			if _, err := fmt.Fprintf(writer, "    detected: %s\n", strings.Join(record.Detected, "; ")); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -324,6 +374,17 @@ func writeHumanSummary(writer io.Writer, summary scanSummary) error {
 		summary.FilesWithClues,
 		summary.ErrorCount,
 	)
+	if err != nil {
+		return err
+	}
+	if summary.FilesWithDeclarations != 0 {
+		_, err = fmt.Fprintf(
+			writer,
+			"; %d manifests declared, %d conflicting",
+			summary.FilesWithDeclarations,
+			summary.FilesWithConflictingDeclarations,
+		)
+	}
 	if err != nil {
 		return err
 	}

@@ -179,6 +179,9 @@ type ScanSummary struct {
 	FilesSkippedOther              int   `json:"files_skipped_other"`
 	ErrorCount                     int   `json:"error_count"`
 	Truncated                      bool  `json:"truncated"`
+	// Manifest declaration counts.
+	FilesWithDeclarations            int `json:"files_with_declarations"`
+	FilesWithConflictingDeclarations int `json:"files_with_conflicting_declarations"`
 }
 
 // ExpressionRecord summarizes a detected license expression across files.
@@ -190,12 +193,17 @@ type ExpressionRecord struct {
 	Matches        int            `json:"matches"`
 }
 
-// DeclaredRecord contains license metadata read from a package manifest.
+// DeclaredRecord contains license metadata read from a package manifest and
+// how it compares with the license text detected for the same package.
 type DeclaredRecord struct {
 	Path                 string   `json:"path"`
 	Raw                  []string `json:"raw"`
 	LicenseFile          string   `json:"license_file"`
 	NormalizedExpression string   `json:"normalized_expression"`
+	// LicenseFilePath is empty unless the named license file was scanned.
+	LicenseFilePath string    `json:"license_file_path"`
+	Detected        []string  `json:"detected"`
+	Agreement       Agreement `json:"agreement"`
 }
 
 // FileRecord contains the license detections and clues reported for one file.
@@ -342,6 +350,7 @@ func scanRepository(
 		return scanReport{}, err
 	}
 	report.Declared = append(report.Declared, discovery.declared...)
+	scanned := make(map[string]bool, len(discovery.tasks))
 	report.Errors = append(report.Errors, discovery.scanErrors...)
 	report.Skipped = append(report.Skipped, discovery.skipped...)
 
@@ -371,6 +380,7 @@ func scanRepository(
 				Reason: skipReasonSize,
 			})
 		case outcome.scanned:
+			scanned[outcome.task.display] = true
 			if len(outcome.result.Detections) == 0 &&
 				len(outcome.result.Clues) == 0 &&
 				(!options.IncludeLegalFiles || len(outcome.roles) == 0) {
@@ -408,6 +418,7 @@ func scanRepository(
 	slices.SortFunc(report.Declared, func(first, second declaredRecord) int {
 		return strings.Compare(first.Path, second.Path)
 	})
+	resolveDeclarations(&report, scanned)
 	slices.SortFunc(report.Errors, func(first, second scanErrorRecord) int {
 		if compared := strings.Compare(first.Path, second.Path); compared != 0 {
 			return compared

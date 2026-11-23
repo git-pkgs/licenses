@@ -414,6 +414,22 @@ func TestReportExitCode(t *testing.T) {
 			want: exitNoDetections,
 		},
 		{
+			name: "normalized declaration",
+			report: scanReport{Declared: []declaredRecord{{
+				Path:                 "package.json",
+				NormalizedExpression: "PSF-2.0",
+			}}},
+			want: exitSuccess,
+		},
+		{
+			name: "unnormalized declaration",
+			report: scanReport{Declared: []declaredRecord{{
+				Path:        "Cargo.toml",
+				LicenseFile: "LICENSE.custom",
+			}}},
+			want: exitNoDetections,
+		},
+		{
 			name: "scan errors",
 			report: scanReport{Errors: []scanErrorRecord{{
 				Path:  "LICENSE",
@@ -466,6 +482,79 @@ func TestRunHuman(t *testing.T) {
 	}
 	if stderr.Len() != 0 {
 		t.Errorf("stderr = %q, want empty", stderr.String())
+	}
+}
+
+func TestRunHumanDeclarations(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeTestFile(t, filepath.Join(root, "Example.podspec"), []byte(`Pod::Spec.new do |s|
+  s.name = "Example"
+  s.version = "1.0.0"
+  s.license = "BSD"
+end
+`))
+	writeTestFile(t, filepath.Join(root, "app", "package.json"), []byte(`{"name":"app","license":"MIT"}`))
+	writeTestFile(t, filepath.Join(root, "app", "LICENSE"), []byte("SPDX-License-Identifier: Apache-2.0\n"))
+	writeTestFile(t, filepath.Join(root, "cargo", "Cargo.toml"), []byte(`[package]
+name = "license-file"
+version = "0.1.0"
+license-file = "LICENSE.custom"
+`))
+	var stdout bytes.Buffer
+	exitCode, err := run(
+		context.Background(),
+		[]string{"-human", root},
+		&stdout,
+		&bytes.Buffer{},
+		true,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if exitCode != exitSuccess {
+		t.Errorf("exit code = %d, want %d", exitCode, exitSuccess)
+	}
+	for _, want := range []string{
+		"Declared licenses:\n  Example.podspec: BSD-2-Clause [undetected]\n    raw: BSD\n  app/package.json: MIT [conflicts]\n    raw: MIT\n    detected: Apache-2.0\n",
+		"  cargo/Cargo.toml: no SPDX expression [unnormalized]\n    license file: LICENSE.custom (not scanned)\n",
+		"; 3 manifests declared, 1 conflicting",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Errorf("output does not contain %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
+func TestRunManifestDeclarationWithoutDetections(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeTestFile(t, filepath.Join(root, "package.json"), []byte(`{
+  "name": "psf",
+  "version": "1.0.0",
+  "license": "PSF"
+}
+`))
+	var stdout bytes.Buffer
+	exitCode, err := run(
+		context.Background(),
+		[]string{"-json", root},
+		&stdout,
+		&bytes.Buffer{},
+		false,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if exitCode != exitSuccess {
+		t.Errorf("exit code = %d, want %d for a normalized declaration", exitCode, exitSuccess)
+	}
+	for _, want := range []string{`"expressions": []`, `"normalized_expression": "PSF-2.0"`, `"agreement": "undetected"`} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Errorf("JSON does not contain %q:\n%s", want, stdout.String())
+		}
 	}
 }
 

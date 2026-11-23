@@ -101,6 +101,24 @@ raw manifest values and includes a normalized SPDX expression when all values
 can be normalized. Multiple values are joined with `OR`; values that cannot be
 normalized remain available in `raw` with an empty `normalized_expression`.
 
+Declarations are package-scoped evidence kept separate from license-text
+detections. Each record compares its declaration with the license text
+detected for the same package: the license file the manifest names plus files
+with the license role in the manifest's directory. Notice-only files, READMEs
+and the manifest's own text are not evidence. Those expressions are listed in
+`detected`, excluding `NOASSERTION` detections. `agreement` is `agrees` when
+every license in the declaration appears in `detected`, `conflicts` when a
+declared license has no matching text, `undetected` when no license text was
+found for the package, or `unnormalized` when the declaration has no SPDX
+expression. Extra detected licenses, such as GPL text beside an LGPL license or
+a third-party license file, do not cause a conflict. `WITH` exceptions need no
+detected text. The `-only` and `-or-later` variants of a license compare as the
+same license, since license text is detected as `-only`. `license_file_path`
+gives the scan-relative path of `license_file` when that file was scanned,
+otherwise it is empty. The summary counts manifests with declarations and those
+that conflict. Human output lists each declaration with its agreement before the
+detected expressions.
+
 Reported expressions use canonical SPDX identifiers when ScanCode supplies
 one. Other ScanCode license keys use `LicenseRef-scancode-<key>`. ScanCode rule
 IDs remain in each match for traceability.
@@ -119,9 +137,10 @@ ScanCode's metadata. Valid custom `LicenseRef-*` values become
 expressions and unknown bare identifiers do not produce an `spdx-id` match.
 Tag matches use the rule id `spdx-license-identifier`.
 
-Exit status 0 means detections were found, 1 is a fatal command error, 2 means
-the scan was incomplete because of per-file errors or the file limit, and 3
-means no conclusive detections were found.
+Exit status 0 means detections or a normalized manifest declaration were
+found, 1 is a fatal command error and 2 means the scan was incomplete because
+of per-file errors or the file limit. Exit status 3 means neither conclusive
+detections nor a normalized declaration were found.
 
 ## Use the library
 
